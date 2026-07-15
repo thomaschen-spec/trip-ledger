@@ -1,13 +1,16 @@
 import base64
+import csv
+import io
 import json
 import os
 import time
 import urllib.request
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 
 from flask import Flask, render_template, request, redirect, url_for, session, Response
 import psycopg
 from psycopg.rows import dict_row
+from PIL import Image, ImageOps
 
 from ocr import extract_receipt
 
@@ -85,6 +88,8 @@ def init_db():
                     UNIQUE (receipt_id, member_id)
                 )
             """)
+            # v3：邀請碼隱私門（NULL＝不設門，舊旅行不受影響）
+            cur.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS invite_code TEXT")
         conn.commit()
 
 
@@ -122,8 +127,27 @@ def current_member_id(trip_id):
 
 
 def get_trip(cur, trip_id):
-    cur.execute("SELECT id, name, budget FROM trips WHERE id = %s", (trip_id,))
+    cur.execute("SELECT id, name, budget, invite_code FROM trips WHERE id = %s", (trip_id,))
     return cur.fetchone()
+
+
+def compress_image(image_bytes, original_mime=None):
+    """收據照片存檔前壓縮：最長邊縮到 1600px、轉 JPEG q80。壞圖就原樣返回。"""
+    try:
+        img = Image.open(io.BytesIO(image_bytes))
+        img = ImageOps.exif_transpose(img)
+        if img.mode != "RGB":
+            img = img.convert("RGB")
+        w, h = img.size
+        longest = max(w, h)
+        if longest > 1600:
+            scale = 1600 / longest
+            img = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
+        buf = io.BytesIO()
+        img.save(buf, format="JPEG", quality=80)
+        return buf.getvalue(), "image/jpeg"
+    except Exception:
+        return image_bytes, original_mime
 
 
 def get_members(cur, trip_id):
@@ -153,6 +177,56 @@ def save_splits(cur, receipt_id, split_ids):
             "INSERT INTO receipt_splits (receipt_id, member_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
             (receipt_id, mid),
         )
+
+
+@app.before_request
+def gate_check():
+    trip_id = (request.view_args or {}).get("trip_id")
+    if trip_id is None or request.endpoint == "gate":
+        return None
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT invite_code FROM trips WHERE id = %s", (trip_id,))
+            row = cur.fetchone()
+    invite_code = row["invite_code"] if row else None
+    if invite_code and not session.get(f"trip_auth_{trip_id}"):
+        return redirect(url_for("gate", trip_id=trip_id, next=request.path))
+    return None
+
+
+@app.route("/trip/<int:trip_id>/gate", methods=["GET", "POST"])
+def gate(trip_id):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            trip = get_trip(cur, trip_id)
+    if not trip:
+        return redirect(url_for("home"))
+
+    error = None
+    if request.method == "POST":
+        code = request.form.get("invite_code", "").strip()
+        actual = (trip["invite_code"] or "").strip()
+        if actual and code == actual:
+            session[f"trip_auth_{trip_id}"] = True
+            next_url = request.args.get("next") or ""
+            if not next_url.startswith("/") or next_url.startswith("//"):
+                next_url = url_for("dashboard", trip_id=trip_id)
+            return redirect(next_url)
+        error = "暗號不對喔"
+    return render_template("gate.html", trip=trip, error=error)
+
+
+@app.route("/trip/<int:trip_id>/invite_code", methods=["POST"])
+def set_invite_code(trip_id):
+    if not current_member_id(trip_id):
+        return redirect(url_for("pick_member", trip_id=trip_id))
+    code = request.form.get("invite_code", "").strip()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE trips SET invite_code = %s WHERE id = %s", (code or None, trip_id))
+        conn.commit()
+    session[f"trip_auth_{trip_id}"] = True  # 設碼的人自己不用再被門擋一次
+    return redirect(url_for("pick_member", trip_id=trip_id))
 
 
 @app.route("/")
@@ -187,16 +261,20 @@ def home():
 def new_trip():
     name = request.form.get("name", "").strip()
     budget = float(request.form.get("budget") or 0)
+    invite_code = request.form.get("invite_code", "").strip() or None
     if not name:
         return redirect(url_for("home"))
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
-                "INSERT INTO trips (name, budget) VALUES (%s, %s) RETURNING id",
-                (name, budget),
+                "INSERT INTO trips (name, budget, invite_code) VALUES (%s, %s, %s) RETURNING id",
+                (name, budget, invite_code),
             )
             trip_id = cur.fetchone()["id"]
         conn.commit()
+    if invite_code:
+        # 創建者剛剛自己填的暗號，不用再驗一次
+        session[f"trip_auth_{trip_id}"] = True
     return redirect(url_for("itinerary", trip_id=trip_id))
 
 
@@ -206,16 +284,25 @@ def itinerary(trip_id):
         start = request.form["start_date"]
         end = request.form["end_date"]
         region = request.form.get("region", "").strip()
+        seg_id = request.form.get("seg_id") or None
         if region:
             with get_conn() as conn:
                 with conn.cursor() as cur:
-                    cur.execute(
-                        "INSERT INTO itinerary (trip_id, start_date, end_date, region) VALUES (%s, %s, %s, %s)",
-                        (trip_id, start, end, region),
-                    )
+                    if seg_id:
+                        cur.execute(
+                            "UPDATE itinerary SET start_date=%s, end_date=%s, region=%s "
+                            "WHERE id=%s AND trip_id=%s",
+                            (start, end, region, seg_id, trip_id),
+                        )
+                    else:
+                        cur.execute(
+                            "INSERT INTO itinerary (trip_id, start_date, end_date, region) VALUES (%s, %s, %s, %s)",
+                            (trip_id, start, end, region),
+                        )
                 conn.commit()
         return redirect(url_for("itinerary", trip_id=trip_id))
 
+    edit_id = request.args.get("edit", type=int)
     with get_conn() as conn:
         with conn.cursor() as cur:
             trip = get_trip(cur, trip_id)
@@ -224,8 +311,18 @@ def itinerary(trip_id):
                 (trip_id,),
             )
             segments = cur.fetchall()
-    return render_template("itinerary.html", trip=trip, segments=segments,
+    edit_seg = next((s for s in segments if s["id"] == edit_id), None) if edit_id else None
+    return render_template("itinerary.html", trip=trip, segments=segments, edit_seg=edit_seg,
                            trip_id_nav=trip_id if current_member_id(trip_id) else None)
+
+
+@app.route("/trip/<int:trip_id>/itinerary/<int:seg_id>/delete", methods=["POST"])
+def delete_itinerary(trip_id, seg_id):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM itinerary WHERE id = %s AND trip_id = %s", (seg_id, trip_id))
+        conn.commit()
+    return redirect(url_for("itinerary", trip_id=trip_id))
 
 
 @app.route("/trip/<int:trip_id>/member", methods=["GET", "POST"])
@@ -333,8 +430,27 @@ def dashboard(trip_id):
             )
             top10 = cur.fetchall()
 
+            cur.execute(
+                "SELECT MIN(start_date) AS start_date, MAX(end_date) AS end_date FROM itinerary WHERE trip_id = %s",
+                (trip_id,),
+            )
+            trip_dates = cur.fetchone()
+
     budget = trip["budget"] or 0
     pct = round((total_spent / budget) * 100, 1) if budget > 0 else None
+
+    daily_budget = None
+    if budget > 0 and trip_dates and trip_dates["start_date"] and trip_dates["end_date"]:
+        today_jst = datetime.now(timezone(timedelta(hours=9))).date()
+        if trip_dates["start_date"] <= today_jst <= trip_dates["end_date"]:
+            days_left = (trip_dates["end_date"] - today_jst).days + 1
+            remaining = budget - total_spent
+            daily_budget = {
+                "days_left": days_left,
+                "remaining": remaining,
+                "daily": (remaining / days_left) if days_left > 0 else remaining,
+                "over": remaining < 0,
+            }
 
     return render_template(
         "dashboard.html",
@@ -342,6 +458,7 @@ def dashboard(trip_id):
         total_spent=total_spent,
         budget=budget,
         pct=pct,
+        daily_budget=daily_budget,
         rate=get_twd_rate(),
         receipts=receipts,
         daily_labels=[d["txn_date"].isoformat() for d in daily],
@@ -393,6 +510,9 @@ def add_receipt(trip_id):
         image_b64 = request.form.get("image_b64")
         image_mime = request.form.get("image_mime")
         image_bytes = base64.b64decode(image_b64) if image_b64 else None
+        if image_bytes:
+            # OCR 已經用過原圖辨識，存檔前壓縮省空間
+            image_bytes, image_mime = compress_image(image_bytes, image_mime)
 
         region = find_region(trip_id, f["txn_date"])
 
@@ -611,6 +731,50 @@ def delete_receipt(trip_id, receipt_id):
             cur.execute("DELETE FROM receipts WHERE id = %s AND trip_id = %s", (receipt_id, trip_id))
         conn.commit()
     return redirect(url_for("dashboard", trip_id=trip_id))
+
+
+@app.route("/trip/<int:trip_id>/export.csv")
+def export_csv(trip_id):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                SELECT r.txn_date, r.store_name, r.amount, r.tax, r.category, r.payment_method,
+                       r.region, p.name AS payer_name,
+                       (SELECT COUNT(*) FROM receipt_splits s WHERE s.receipt_id = r.id) AS split_count
+                FROM receipts r
+                LEFT JOIN members p ON p.id = COALESCE(r.payer_id, r.member_id)
+                WHERE r.trip_id = %s
+                ORDER BY r.txn_date, r.id
+                """,
+                (trip_id,),
+            )
+            rows = cur.fetchall()
+
+    rate = get_twd_rate()
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["日期", "店名", "金額(円)", "稅", "分類", "付款方式", "地區", "誰付的", "分攤人數", "台幣參考"])
+    for r in rows:
+        writer.writerow([
+            r["txn_date"].isoformat() if r["txn_date"] else "",
+            r["store_name"] or "",
+            "{:.0f}".format(r["amount"]),
+            "{:.0f}".format(r["tax"]) if r["tax"] is not None else "",
+            r["category"] or "",
+            r["payment_method"] or "",
+            r["region"] or "",
+            r["payer_name"] or "",
+            r["split_count"] or 0,
+            "{:.0f}".format(r["amount"] * rate) if rate else "",
+        ])
+
+    csv_bytes = b"\xef\xbb\xbf" + buf.getvalue().encode("utf-8")  # UTF-8 BOM，Excel 直接開才不會亂碼
+    return Response(
+        csv_bytes,
+        mimetype="text/csv",
+        headers={"Content-Disposition": f"attachment; filename=trip-{trip_id}-ledger.csv"},
+    )
 
 
 @app.route("/trip/<int:trip_id>/receipt/<int:receipt_id>/image")

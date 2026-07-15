@@ -39,4 +39,23 @@
     </div>
     <button class="btn red" type="submit">加入這趟旅行</button>
   </form>
+
+  <div class="card">
+    <label style="margin-top:0;">🔒 邀請碼</label>
+    {% if trip.invite_code %}
+      <p class="hint">目前已設定邀請碼，旅伴進入這本手帳時要輸入才能看。</p>
+    {% else %}
+      <p class="hint">目前沒有設邀請碼，任何人拿到連結都能直接進來。</p>
+    {% endif %}
+    <form method="post" action="{{ url_for('set_invite_code', trip_id=trip.id) }}">
+      <input type="text" name="invite_code" placeholder="設定或修改邀請碼" value="{{ trip.invite_code or '' }}">
+      <button class="btn green" type="submit">儲存</button>
+    </form>
+    {% if trip.invite_code %}
+    <form method="post" action="{{ url_for('set_invite_code', trip_id=trip.id) }}" style="margin-top:8px;">
+      <input type="hidden" name="invite_code" value="">
+      <button class="btn ghost" type="submit">清空邀請碼</button>
+    </form>
+    {% endif %}
+  </div>
 {% endblock %}

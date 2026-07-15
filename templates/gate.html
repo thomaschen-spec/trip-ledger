@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}輸入暗號 — {{ trip.name }}{% endblock %}
+{% block content %}
+  <h1><span class="deco">🔒</span>{{ trip.name }}</h1>
+  <p class="page-sub">這本手帳有設暗號，跟旅伴要邀請碼才能進來喔。</p>
+
+  {% if error %}
+  <div class="card taped" style="background: var(--accent-soft); color: var(--accent); text-align:center;">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <form class="card taped" method="post">
+    <label>邀請碼</label>
+    <input type="text" name="invite_code" autofocus required>
+    <button class="btn red" type="submit">進入手帳</button>
+  </form>
+{% endblock %}

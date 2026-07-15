@@ -6,6 +6,12 @@
 <title>{% block title %}旅行手帳{% endblock %}</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+<link rel="manifest" href="/static/manifest.json">
+<meta name="theme-color" content="#3d3226">
+<link rel="apple-touch-icon" href="/static/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="旅行手帳">
 <style>
   :root {
     --paper: #f6f1e6;
@@ -113,6 +119,22 @@
   <a{% if nav_active == 'member' %} class="active"{% endif %} href="{{ url_for('pick_member', trip_id=trip_id_nav) }}"><span class="ico">👥</span>成員</a>
 </nav>
 {% endif %}
+<script>
+  // Register the service worker so the app becomes installable ("加到主畫面").
+  // NOTE: sw.js is served from /static/sw.js by Flask's default static route,
+  // so without a Service-Worker-Allowed header its effective scope defaults
+  // to /static/ instead of covering the whole app ("/"). We deliberately do
+  // NOT pass a {scope: '/'} option here because Flask's static handler does
+  // not send the Service-Worker-Allowed header needed to widen the scope —
+  // requesting scope '/' from a script under /static/ would just throw a
+  // SecurityError. See final report: this may need a dedicated /sw.js route
+  // in app.py for full "/" scope coverage.
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+    });
+  }
+</script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

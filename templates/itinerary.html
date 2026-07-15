@@ -4,6 +4,11 @@
   .seg { display: flex; align-items: center; gap: 10px; }
   .seg .region { font-weight: bold; font-family: "Noto Serif TC", serif; }
   .seg .dates { color: var(--ink-soft); font-size: 0.82rem; }
+  .seg .info { flex: 1; }
+  .seg .seg-actions { display: flex; gap: 10px; }
+  .seg .seg-actions a, .seg .seg-actions button { background: none; border: none; color: var(--ink-soft);
+    font-size: 0.8rem; cursor: pointer; padding: 0; text-decoration: none; font-family: inherit; }
+  .seg .seg-actions a { color: var(--leaf); }
 {% endblock %}
 {% block content %}
   <h1><span class="deco">🗺️</span>{{ trip.name }} — 行程</h1>
@@ -11,19 +16,30 @@
 
   {% for s in segments %}
   <div class="card seg">
-    <span class="stamp green">📍 {{ s.region }}</span>
-    <span class="dates">{{ s.start_date }} ～ {{ s.end_date }}</span>
+    <div class="info">
+      <span class="stamp green">📍 {{ s.region }}</span>
+      <span class="dates">{{ s.start_date }} ～ {{ s.end_date }}</span>
+    </div>
+    <div class="seg-actions">
+      <a href="{{ url_for('itinerary', trip_id=trip.id, edit=s.id) }}">✏️ 修改</a>
+      <form method="post" action="{{ url_for('delete_itinerary', trip_id=trip.id, seg_id=s.id) }}"
+            onsubmit="return confirm('刪除這段行程？');" style="display:inline;">
+        <button type="submit">刪除</button>
+      </form>
+    </div>
   </div>
   {% endfor %}
 
   <form class="card taped" method="post">
+    {% if edit_seg %}<input type="hidden" name="seg_id" value="{{ edit_seg.id }}">{% endif %}
     <label>開始日期</label>
-    <input type="date" name="start_date" required>
+    <input type="date" name="start_date" value="{{ edit_seg.start_date if edit_seg else '' }}" required>
     <label>結束日期</label>
-    <input type="date" name="end_date" required>
+    <input type="date" name="end_date" value="{{ edit_seg.end_date if edit_seg else '' }}" required>
     <label>地區名稱</label>
-    <input type="text" name="region" placeholder="例如：東京" required>
-    <button class="btn" type="submit">新增一段行程</button>
+    <input type="text" name="region" value="{{ edit_seg.region if edit_seg else '' }}" placeholder="例如：東京" required>
+    <button class="btn" type="submit">{% if edit_seg %}儲存修改{% else %}新增一段行程{% endif %}</button>
+    {% if edit_seg %}<a class="back" href="{{ url_for('itinerary', trip_id=trip.id) }}">取消修改</a>{% endif %}
   </form>
 
   <a class="btn green" href="{{ url_for('pick_member', trip_id=trip.id) }}">完成，開始記帳 →</a>

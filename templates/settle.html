@@ -15,6 +15,8 @@
   .transfer .amt { margin-left: auto; text-align: right; font-family: "Noto Serif TC", serif; font-weight: bold; color: var(--accent); }
   .transfer .amt .twd { display: block; font-size: 0.72rem; font-weight: normal; color: var(--ink-soft); }
   .all-clear { text-align: center; padding: 24px; color: var(--ink-soft); }
+  #shareBtn { margin-top: 4px; }
+  .btn.gold { background: var(--gold); color: #fff; }
 {% endblock %}
 {% block content %}
   <h1><span class="deco">🤝</span>分帳結算</h1>
@@ -52,4 +54,150 @@
   {% else %}
   <div class="card all-clear">✨ 目前大家兩不相欠，不用轉帳！</div>
   {% endfor %}
+
+  <button type="button" id="shareBtn" class="btn gold">📤 存成圖片分享</button>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  // Data for the share-image canvas, provided by the server (Jinja |tojson)
+  // so we don't have to scrape rendered DOM text (fragile — breaks if wording changes).
+  const rows = {{ (rows | tojson) if rows is defined else '[]' }};
+  const transfers = {{ (transfers | tojson) if transfers is defined else '[]' }};
+  const tripName = {{ trip.name|tojson }};
+
+  function fmt(n) {
+    return Math.round(n).toLocaleString('zh-TW');
+  }
+
+  function drawCard() {
+    const W = 1080, H = 1350;
+    const canvas = document.createElement('canvas');
+    canvas.width = W; canvas.height = H;
+    const ctx = canvas.getContext('2d');
+
+    // paper background
+    ctx.fillStyle = '#f6f1e6';
+    ctx.fillRect(0, 0, W, H);
+
+    // subtle ruled lines like the paper texture in the app
+    ctx.strokeStyle = 'rgba(61,50,38,0.05)';
+    ctx.lineWidth = 2;
+    for (let y = 40; y < H; y += 36) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    }
+
+    // title
+    ctx.fillStyle = '#c9573f';
+    ctx.font = '700 56px "Noto Serif TC", "Microsoft JhengHei", serif';
+    ctx.fillText('🤝 分帳結算', 60, 110);
+    ctx.fillStyle = '#8a7d6a';
+    ctx.font = '32px "Microsoft JhengHei", sans-serif';
+    ctx.fillText(tripName || '', 60, 155);
+
+    ctx.strokeStyle = '#e6dcc8';
+    ctx.beginPath(); ctx.moveTo(60, 185); ctx.lineTo(W - 60, 185); ctx.stroke();
+
+    // per-person rows
+    let y = 240;
+    ctx.font = '600 34px "Microsoft JhengHei", sans-serif';
+    rows.forEach((row) => {
+      const m = row.m || {};
+      ctx.fillStyle = '#3d3226';
+      ctx.font = '600 34px "Microsoft JhengHei", sans-serif';
+      ctx.fillText((m.avatar || '') + ' ' + (m.name || ''), 60, y);
+
+      ctx.fillStyle = '#8a7d6a';
+      ctx.font = '26px "Microsoft JhengHei", sans-serif';
+      ctx.fillText('實付 ¥' + fmt(row.paid) + '・應攤 ¥' + fmt(row.share), 60, y + 34);
+
+      const balance = row.balance || 0;
+      let label, color;
+      if (balance > 0.5) { label = '該收回'; color = '#4a7c62'; }
+      else if (balance < -0.5) { label = '該補給大家'; color = '#c9573f'; }
+      else { label = '剛剛好'; color = '#8a7d6a'; }
+      ctx.textAlign = 'right';
+      ctx.fillStyle = color;
+      ctx.font = '700 34px "Noto Serif TC", serif';
+      ctx.fillText('¥' + fmt(Math.abs(balance)), W - 60, y + 14);
+      ctx.font = '22px "Microsoft JhengHei", sans-serif';
+      ctx.fillText(label, W - 60, y - 14);
+      ctx.textAlign = 'left';
+
+      y += 90;
+    });
+
+    // transfers section
+    y += 20;
+    ctx.strokeStyle = '#e6dcc8';
+    ctx.beginPath(); ctx.moveTo(60, y); ctx.lineTo(W - 60, y); ctx.stroke();
+    y += 50;
+    ctx.fillStyle = '#3d3226';
+    ctx.font = '600 36px "Noto Serif TC", serif';
+    ctx.fillText('💸 這樣轉帳就結清', 60, y);
+    y += 55;
+
+    if (transfers.length === 0) {
+      ctx.fillStyle = '#8a7d6a';
+      ctx.font = '30px "Microsoft JhengHei", sans-serif';
+      ctx.fillText('✨ 目前大家兩不相欠，不用轉帳！', 60, y);
+      y += 60;
+    } else {
+      transfers.forEach((t) => {
+        const from = t.from || {}, to = t.to || {};
+        ctx.fillStyle = '#3d3226';
+        ctx.font = '32px "Microsoft JhengHei", sans-serif';
+        const line = (from.avatar || '') + from.name + '  →  ' + (to.avatar || '') + to.name;
+        ctx.fillText(line, 60, y);
+
+        ctx.textAlign = 'right';
+        ctx.fillStyle = '#c9573f';
+        ctx.font = '700 34px "Noto Serif TC", serif';
+        ctx.fillText('¥' + fmt(t.amount), W - 60, y);
+        ctx.textAlign = 'left';
+
+        y += 55;
+      });
+    }
+
+    // footer date
+    ctx.fillStyle = '#8a7d6a';
+    ctx.font = '22px "Microsoft JhengHei", sans-serif';
+    const today = new Date().toLocaleDateString('zh-TW');
+    ctx.textAlign = 'right';
+    ctx.fillText(today, W - 60, H - 40);
+    ctx.textAlign = 'left';
+
+    return canvas;
+  }
+
+  document.getElementById('shareBtn').addEventListener('click', () => {
+    const canvas = drawCard();
+    canvas.toBlob(async (blob) => {
+      if (!blob) return;
+      const fileName = 'settle-' + Date.now() + '.png';
+      const file = new File([blob], fileName, { type: 'image/png' });
+
+      if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: '分帳結算', text: tripName });
+          return;
+        } catch (e) {
+          // user cancelled or share failed — fall through to download
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 'image/png');
+  });
+})();
+</script>
 {% endblock %}

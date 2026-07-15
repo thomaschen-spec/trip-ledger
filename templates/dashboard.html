@@ -31,7 +31,7 @@
 {% block content %}
   <div class="top-links">
     <h1><span class="deco">✈</span>{{ trip.name }}</h1>
-    <a href="{{ url_for('itinerary', trip_id=trip.id) }}">🗺️ 行程</a>
+    <span><a href="{{ url_for('itinerary', trip_id=trip.id) }}">🗺️ 行程</a> ・ <a href="{{ url_for('export_csv', trip_id=trip.id) }}">⬇️ 匯出</a></span>
   </div>
 
   <div class="budget-box">
@@ -43,6 +43,17 @@
     <div style="font-size:0.78rem; margin-top:4px;">已用 {{ pct }}%</div>
     {% endif %}
   </div>
+
+  {% if daily_budget %}
+  <div class="card taped" style="text-align:center;">
+    {% if daily_budget.over %}
+      <span class="stamp">已超出預算 ¥{{ "{:,.0f}".format(-daily_budget.remaining) }}</span>
+    {% else %}
+      <div>今天可花 <b class="serif" style="color:var(--accent); font-size:1.15rem;">¥{{ "{:,.0f}".format(daily_budget.daily) }}</b></div>
+      <div class="hint" style="margin:4px 0 0;">剩 {{ daily_budget.days_left }} 天・預算還剩 ¥{{ "{:,.0f}".format(daily_budget.remaining) }}{% if rate %}（約 NT$ {{ "{:,.0f}".format(daily_budget.remaining * rate) }}）{% endif %}</div>
+    {% endif %}
+  </div>
+  {% endif %}
 
   <div class="two-btns">
     <a class="btn green" href="{{ url_for('add_receipt', trip_id=trip.id) }}">📷 拍收據</a>
