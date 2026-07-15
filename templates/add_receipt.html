@@ -10,22 +10,47 @@
   h1 { font-size: 1.3rem; }
   form { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
   label { display: block; font-size: 0.9rem; margin-top: 8px; color: #666; }
-  input { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
   button { margin-top: 12px; width: 100%; padding: 12px; background: #2b2b2b; color: #f5c977; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
   a.back { display: inline-block; margin-top: 12px; color: #666; text-decoration: none; font-size: 0.9rem; }
   .hint { color: #888; font-size: 0.8rem; margin-bottom: 12px; }
+  input[type="file"] { display: none; }
+  .photo-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 32px 16px; margin-top: 4px; background: #f5f3ef; border: 2px dashed #ccc;
+    border-radius: 10px; font-size: 1rem; color: #2b2b2b; box-sizing: border-box; cursor: pointer; }
+  .photo-btn .icon { font-size: 2.2rem; }
+  .photo-btn.picked { border-style: solid; border-color: #27ae60; color: #27ae60; }
+  .submit-btn { margin-top: 12px; width: 100%; padding: 12px; background: #2b2b2b; color: #f5c977; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+  .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <h1>拍收據</h1>
   <p class="hint">拍照或選圖後，系統會自動辨識文字並翻譯，辨識不一定準，下一步可以修改。</p>
-  <form method="post" enctype="multipart/form-data">
-    <label>收據照片</label>
-    <input type="file" name="photo" accept="image/*" capture="environment" required>
-    <button type="submit">辨識收據 →</button>
+  <form method="post" enctype="multipart/form-data" id="receiptForm">
+    <label for="photoInput">收據照片</label>
+    <label class="photo-btn" id="photoBtn" for="photoInput">
+      <span class="icon">📷</span>
+      <span id="photoBtnText">拍照或選圖</span>
+    </label>
+    <input type="file" id="photoInput" name="photo" accept="image/*" capture="environment" required>
+    <button class="submit-btn" type="submit" id="submitBtn" disabled>辨識收據 →</button>
   </form>
   <a class="back" href="{{ url_for('dashboard', trip_id=trip_id) }}">← 回帳本</a>
+
+  <script>
+    var input = document.getElementById('photoInput');
+    var btn = document.getElementById('photoBtn');
+    var btnText = document.getElementById('photoBtnText');
+    var submitBtn = document.getElementById('submitBtn');
+    input.addEventListener('change', function () {
+      if (input.files && input.files.length > 0) {
+        btn.classList.add('picked');
+        btnText.textContent = '已選擇：' + input.files[0].name;
+        submitBtn.disabled = false;
+      }
+    });
+  </script>
 </div>
 </body>
 </html>
