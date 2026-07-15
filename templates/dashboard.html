@@ -1,80 +1,81 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>{{ trip.name }}</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<style>
-  body { font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif; background: #f5f3ef; margin: 0; padding: 16px; color: #2b2b2b; }
-  .wrap { max-width: 480px; margin: 0 auto; }
-  h1 { font-size: 1.3rem; margin: 0 0 12px; }
-  .budget-box { background: #2b2b2b; color: #f5c977; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
-  .budget-box .num { font-size: 1.4rem; font-weight: bold; }
-  .budget-box .bar { background: rgba(255,255,255,0.2); border-radius: 6px; height: 10px; margin-top: 8px; overflow: hidden; }
-  .budget-box .bar .fill { background: #f5c977; height: 100%; }
-  .chart-wrap { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+{% extends "base.html" %}
+{% block title %}{{ trip.name }} — 旅行手帳{% endblock %}
+{% block head %}<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>{% endblock %}
+{% block style %}
+  .budget-box { background: var(--ink); color: var(--gold-soft); border-radius: 12px; padding: 16px; margin-bottom: 14px; position: relative; overflow: hidden; }
+  .budget-box::after { content: "¥"; position: absolute; right: -6px; bottom: -22px; font-size: 6rem; opacity: 0.08; font-family: "Noto Serif TC", serif; }
+  .budget-box .num { font-size: 1.45rem; font-weight: bold; font-family: "Noto Serif TC", serif; }
+  .budget-box .twd { font-size: 0.85rem; opacity: 0.85; margin-top: 2px; }
+  .budget-box .bar { background: rgba(255,255,255,0.18); border-radius: 6px; height: 10px; margin-top: 10px; overflow: hidden; }
+  .budget-box .bar .fill { background: linear-gradient(90deg, var(--gold), var(--accent)); height: 100%; }
+  .two-btns { display: flex; gap: 10px; margin-bottom: 14px; }
+  .two-btns .btn { margin-top: 0; }
   .chart-wrap h2 { font-size: 0.95rem; margin: 0 0 8px; }
-  .add-btn { display: block; text-align: center; background: #27ae60; color: #fff; padding: 12px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-bottom: 16px; }
-  ul.list { list-style: none; padding: 0; margin: 0; }
-  li.item { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
-  .item .top { display: flex; justify-content: space-between; }
-  .item .amount { font-weight: bold; color: #c0392b; }
-  .item .meta { font-size: 0.8rem; color: #888; margin-top: 4px; }
-  .item form { display: inline; }
-  .item button { background: none; border: none; color: #aaa; font-size: 0.85rem; cursor: pointer; padding: 0; }
-  ol.top10 { padding-left: 20px; margin: 0; }
-  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e5e1da;
-    display: flex; justify-content: space-around; padding: 8px 0 max(8px, env(safe-area-inset-bottom)); z-index: 10; }
-  .bottom-nav a { text-decoration: none; color: #888; font-size: 0.7rem; text-align: center; flex: 1; }
-  .bottom-nav a .ico { display: block; font-size: 1.4rem; }
-  .bottom-nav a.active { color: #2b2b2b; font-weight: bold; }
-  .bottom-nav a.cam { color: #27ae60; font-weight: bold; }
-  body { padding-bottom: 80px; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>{{ trip.name }}</h1>
+  .top-links { display: flex; justify-content: space-between; align-items: baseline; }
+  .top-links a { color: var(--ink-soft); text-decoration: none; font-size: 0.8rem; }
+  ul.list { list-style: none; padding: 0; margin: 0 0 8px; }
+  li.item { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(61,50,38,0.06); display: flex; gap: 10px; align-items: flex-start; }
+  .item .body { flex: 1; min-width: 0; }
+  .item .top { display: flex; justify-content: space-between; gap: 8px; }
+  .item .store { font-weight: bold; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .item .amount { font-weight: bold; color: var(--accent); white-space: nowrap; font-family: "Noto Serif TC", serif; }
+  .item .twd { font-size: 0.72rem; color: var(--ink-soft); text-align: right; }
+  .item .meta { font-size: 0.76rem; color: var(--ink-soft); margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+  .item .actions { margin-top: 6px; display: flex; gap: 14px; }
+  .item .actions a, .item .actions button { background: none; border: none; color: var(--ink-soft); font-size: 0.8rem; cursor: pointer; padding: 0; text-decoration: none; font-family: inherit; }
+  .item .actions a.edit { color: var(--leaf); }
+  ol.top10 { padding-left: 20px; margin: 0; font-size: 0.9rem; }
+  ol.top10 li { margin-bottom: 4px; }
+  .empty-receipts { text-align: center; padding: 24px; color: var(--ink-soft); }
+{% endblock %}
+{% block content %}
+  <div class="top-links">
+    <h1><span class="deco">✈</span>{{ trip.name }}</h1>
+    <a href="{{ url_for('itinerary', trip_id=trip.id) }}">🗺️ 行程</a>
+  </div>
 
   <div class="budget-box">
-    <div>已花費</div>
-    <div class="num">¥{{ "%.0f"|format(total_spent) }}{% if budget %} / ¥{{ "%.0f"|format(budget) }}{% endif %}</div>
+    <div style="font-size:0.85rem;">已花費</div>
+    <div class="num">¥{{ "{:,.0f}".format(total_spent) }}{% if budget %} <span style="font-size:0.95rem; opacity:0.7;">/ ¥{{ "{:,.0f}".format(budget) }}</span>{% endif %}</div>
+    {% if rate %}<div class="twd">約 NT$ {{ "{:,.0f}".format(total_spent * rate) }}{% if budget %}（預算約 NT$ {{ "{:,.0f}".format(budget * rate) }}）{% endif %}</div>{% endif %}
     {% if pct is not none %}
     <div class="bar"><div class="fill" style="width: {{ [pct, 100]|min }}%;"></div></div>
-    <div style="font-size:0.8rem; margin-top:4px;">已用 {{ pct }}%</div>
+    <div style="font-size:0.78rem; margin-top:4px;">已用 {{ pct }}%</div>
     {% endif %}
   </div>
 
-  <a class="add-btn" href="{{ url_for('add_receipt', trip_id=trip.id) }}">＋ 拍收據記一筆</a>
+  <div class="two-btns">
+    <a class="btn green" href="{{ url_for('add_receipt', trip_id=trip.id) }}">📷 拍收據</a>
+    <a class="btn" href="{{ url_for('manual_entry', trip_id=trip.id) }}">✍️ 手動記一筆</a>
+  </div>
 
   {% if cat_labels %}
-  <div class="chart-wrap">
-    <h2>消費類別占比</h2>
+  <div class="card chart-wrap">
+    <h2 class="serif">消費類別占比</h2>
     <canvas id="catChart" height="200"></canvas>
   </div>
   {% endif %}
 
   {% if daily_labels %}
-  <div class="chart-wrap">
-    <h2>每日花費趨勢</h2>
+  <div class="card chart-wrap">
+    <h2 class="serif">每日花費趨勢</h2>
     <canvas id="dailyChart" height="200"></canvas>
   </div>
   {% endif %}
 
   {% if pay_labels %}
-  <div class="chart-wrap">
-    <h2>付款方式分布</h2>
+  <div class="card chart-wrap">
+    <h2 class="serif">付款方式分布</h2>
     <canvas id="payChart" height="200"></canvas>
   </div>
   {% endif %}
 
-  {% if top10 %}
-  <div class="chart-wrap">
-    <h2>消費前十名</h2>
+  {% if top10 and top10|length > 1 %}
+  <div class="card chart-wrap">
+    <h2 class="serif">消費前十名</h2>
     <ol class="top10">
       {% for t in top10 %}
-      <li>{{ t.store_name or "未命名" }} — ¥{{ "%.0f"|format(t.amount) }}（{{ t.txn_date }}）</li>
+      <li>{{ t.store_name or "未命名" }} — ¥{{ "{:,.0f}".format(t.amount) }}（{{ t.txn_date }}）</li>
       {% endfor %}
     </ol>
   </div>
@@ -83,48 +84,59 @@
   <ul class="list">
     {% for r in receipts %}
     <li class="item">
-      <div class="top">
-        <div>{{ r.avatar }} {{ r.store_name or "未命名" }}</div>
-        <div class="amount">¥{{ "%.0f"|format(r.amount) }}</div>
+      <span class="avatar">{{ r.payer_avatar or r.avatar }}</span>
+      <div class="body">
+        <div class="top">
+          <span class="store">{{ r.store_name or "未命名" }}</span>
+          <span>
+            <div class="amount">¥{{ "{:,.0f}".format(r.amount) }}</div>
+            {% if rate %}<div class="twd">≈NT$ {{ "{:,.0f}".format(r.amount * rate) }}</div>{% endif %}
+          </span>
+        </div>
+        <div class="meta">
+          <span>{{ r.txn_date }}</span>
+          <span class="chip">{{ r.category }}</span>
+          <span>{{ r.payment_method }}</span>
+          {% if r.region %}<span>📍{{ r.region }}</span>{% endif %}
+          <span>{{ r.payer_name or r.member_name }} 付</span>
+          {% if r.split_count and r.split_count > 1 %}<span class="stamp green">{{ r.split_count }}人分帳</span>{% endif %}
+          {% if r.has_image %}<a href="{{ url_for('receipt_image', trip_id=trip.id, receipt_id=r.id) }}" target="_blank" style="color:var(--ink-soft);">🧾</a>{% endif %}
+        </div>
+        <div class="actions">
+          <a class="edit" href="{{ url_for('edit_receipt', trip_id=trip.id, receipt_id=r.id) }}">✏️ 修改</a>
+          <form method="post" action="{{ url_for('delete_receipt', trip_id=trip.id, receipt_id=r.id) }}" onsubmit="return confirm('刪除這筆？');" style="display:inline;">
+            <button type="submit">刪除</button>
+          </form>
+        </div>
       </div>
-      <div class="meta">{{ r.txn_date }} · {{ r.category }} · {{ r.payment_method }}{% if r.region %} · {{ r.region }}{% endif %} · {{ r.member_name }}</div>
-      <form method="post" action="{{ url_for('delete_receipt', trip_id=trip.id, receipt_id=r.id) }}" onsubmit="return confirm('刪除這筆？');">
-        <button type="submit">刪除</button>
-      </form>
     </li>
+    {% else %}
+    <li class="card empty-receipts">🍵 這本手帳還是空的<br>拍張收據或手動記下第一筆吧！</li>
     {% endfor %}
   </ul>
-</div>
-
-<nav class="bottom-nav">
-  <a class="active" href="{{ url_for('dashboard', trip_id=trip.id) }}"><span class="ico">📊</span>儀表板</a>
-  <a class="cam" href="{{ url_for('add_receipt', trip_id=trip.id) }}"><span class="ico">📷</span>拍收據</a>
-  <a href="{{ url_for('itinerary', trip_id=trip.id) }}"><span class="ico">🗺️</span>行程</a>
-  <a href="{{ url_for('pick_member', trip_id=trip.id) }}"><span class="ico">👥</span>成員</a>
-</nav>
-
+{% endblock %}
+{% block scripts %}
 <script>
 {% if cat_labels %}
 new Chart(document.getElementById('catChart'), {
   type: 'pie',
-  data: { labels: {{ cat_labels|tojson }}, datasets: [{ data: {{ cat_values|tojson }}, backgroundColor: ['#c0392b','#e67e22','#f1c40f','#8e44ad','#2980b9','#16a085'] }] },
+  data: { labels: {{ cat_labels|tojson }}, datasets: [{ data: {{ cat_values|tojson }}, backgroundColor: ['#c9573f','#d99a2b','#4a7c62','#7a6a8f','#5b87a8','#a8814f'] }] },
   options: { plugins: { legend: { position: 'bottom' } } }
 });
 {% endif %}
 {% if daily_labels %}
 new Chart(document.getElementById('dailyChart'), {
   type: 'line',
-  data: { labels: {{ daily_labels|tojson }}, datasets: [{ label: '花費', data: {{ daily_values|tojson }}, borderColor: '#2b2b2b', backgroundColor: 'rgba(43,43,43,0.1)', fill: true }] },
+  data: { labels: {{ daily_labels|tojson }}, datasets: [{ label: '花費', data: {{ daily_values|tojson }}, borderColor: '#c9573f', backgroundColor: 'rgba(201,87,63,0.12)', fill: true, tension: 0.3 }] },
   options: { plugins: { legend: { display: false } } }
 });
 {% endif %}
 {% if pay_labels %}
 new Chart(document.getElementById('payChart'), {
   type: 'doughnut',
-  data: { labels: {{ pay_labels|tojson }}, datasets: [{ data: {{ pay_values|tojson }}, backgroundColor: ['#2980b9','#16a085','#f1c40f','#7f8c8d'] }] },
+  data: { labels: {{ pay_labels|tojson }}, datasets: [{ data: {{ pay_values|tojson }}, backgroundColor: ['#4a7c62','#d99a2b','#c9573f','#8a7d6a'] }] },
   options: { plugins: { legend: { position: 'bottom' } } }
 });
 {% endif %}
 </script>
-</body>
-</html>
+{% endblock %}

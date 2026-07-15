@@ -1,6 +1,9 @@
 import base64
+import json
 import os
-from datetime import date, datetime
+import time
+import urllib.request
+from datetime import date
 
 from flask import Flask, render_template, request, redirect, url_for, session, Response
 import psycopg
@@ -70,7 +73,37 @@ def init_db():
                     created_at TIMESTAMP NOT NULL DEFAULT now()
                 )
             """)
+            # v2 遷移：誰付的（舊資料把記帳人當付款人）
+            cur.execute("ALTER TABLE receipts ADD COLUMN IF NOT EXISTS payer_id INTEGER REFERENCES members(id)")
+            cur.execute("UPDATE receipts SET payer_id = member_id WHERE payer_id IS NULL")
+            # v2：分帳名單（這筆由哪些人一起分）
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS receipt_splits (
+                    id SERIAL PRIMARY KEY,
+                    receipt_id INTEGER NOT NULL REFERENCES receipts(id) ON DELETE CASCADE,
+                    member_id INTEGER NOT NULL REFERENCES members(id),
+                    UNIQUE (receipt_id, member_id)
+                )
+            """)
         conn.commit()
+
+
+# ---- 日圓 → 台幣匯率（免費 API，記憶體快取 6 小時，抓不到就不顯示台幣） ----
+_rate_cache = {"rate": None, "ts": 0.0}
+
+
+def get_twd_rate():
+    if _rate_cache["rate"] and time.time() - _rate_cache["ts"] < 6 * 3600:
+        return _rate_cache["rate"]
+    try:
+        with urllib.request.urlopen("https://open.er-api.com/v6/latest/JPY", timeout=6) as resp:
+            data = json.load(resp)
+        rate = float(data["rates"]["TWD"])
+        _rate_cache["rate"] = rate
+        _rate_cache["ts"] = time.time()
+        return rate
+    except Exception:
+        return _rate_cache["rate"]  # 過期的舊值也比沒有好；從沒抓到過就是 None
 
 
 def find_region(trip_id, txn_date):
@@ -88,12 +121,65 @@ def current_member_id(trip_id):
     return session.get(f"member_{trip_id}")
 
 
+def get_trip(cur, trip_id):
+    cur.execute("SELECT id, name, budget FROM trips WHERE id = %s", (trip_id,))
+    return cur.fetchone()
+
+
+def get_members(cur, trip_id):
+    cur.execute("SELECT id, name, avatar FROM members WHERE trip_id = %s ORDER BY id", (trip_id,))
+    return cur.fetchall()
+
+
+def parse_receipt_form(form):
+    """手動記帳 / 收據確認 / 編輯三個表單共用的欄位解析。"""
+    tax = form.get("tax") or None
+    return {
+        "amount": float(form["amount"]),
+        "tax": float(tax) if tax else None,
+        "category": form["category"],
+        "payment_method": form["payment_method"],
+        "txn_date": form["txn_date"],
+        "store_name": form.get("store_name", "").strip(),
+        "payer_id": int(form["payer_id"]),
+        "split_ids": [int(x) for x in form.getlist("split_ids")],
+    }
+
+
+def save_splits(cur, receipt_id, split_ids):
+    cur.execute("DELETE FROM receipt_splits WHERE receipt_id = %s", (receipt_id,))
+    for mid in split_ids:
+        cur.execute(
+            "INSERT INTO receipt_splits (receipt_id, member_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+            (receipt_id, mid),
+        )
+
+
 @app.route("/")
 def home():
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, name, budget FROM trips ORDER BY id DESC")
+            cur.execute("""
+                SELECT t.id, t.name, t.budget,
+                       COALESCE(SUM(r.amount), 0) AS spent,
+                       COUNT(r.id) AS receipt_count
+                FROM trips t LEFT JOIN receipts r ON r.trip_id = t.id
+                GROUP BY t.id ORDER BY t.id DESC
+            """)
             trips = cur.fetchall()
+            cur.execute("""
+                SELECT trip_id, MIN(start_date) AS start_date, MAX(end_date) AS end_date
+                FROM itinerary GROUP BY trip_id
+            """)
+            dates = {d["trip_id"]: d for d in cur.fetchall()}
+            cur.execute("SELECT trip_id, avatar FROM members ORDER BY id")
+            avatars = {}
+            for m in cur.fetchall():
+                avatars.setdefault(m["trip_id"], []).append(m["avatar"])
+    for t in trips:
+        t["dates"] = dates.get(t["id"])
+        t["avatars"] = avatars.get(t["id"], [])
+        t["pct"] = min(round(t["spent"] / t["budget"] * 100), 100) if t["budget"] else None
     return render_template("home.html", trips=trips)
 
 
@@ -132,22 +218,21 @@ def itinerary(trip_id):
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, name, budget FROM trips WHERE id = %s", (trip_id,))
-            trip = cur.fetchone()
+            trip = get_trip(cur, trip_id)
             cur.execute(
                 "SELECT id, start_date, end_date, region FROM itinerary WHERE trip_id = %s ORDER BY start_date",
                 (trip_id,),
             )
             segments = cur.fetchall()
-    return render_template("itinerary.html", trip=trip, segments=segments)
+    return render_template("itinerary.html", trip=trip, segments=segments,
+                           trip_id_nav=trip_id if current_member_id(trip_id) else None)
 
 
 @app.route("/trip/<int:trip_id>/member", methods=["GET", "POST"])
 def pick_member(trip_id):
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, name, budget FROM trips WHERE id = %s", (trip_id,))
-            trip = cur.fetchone()
+            trip = get_trip(cur, trip_id)
 
     if request.method == "POST":
         action = request.form.get("action")
@@ -173,9 +258,10 @@ def pick_member(trip_id):
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, name, avatar FROM members WHERE trip_id = %s ORDER BY id", (trip_id,))
-            members = cur.fetchall()
-    return render_template("pick_member.html", trip=trip, members=members, avatars=AVATARS)
+            members = get_members(cur, trip_id)
+    return render_template("pick_member.html", trip=trip, members=members, avatars=AVATARS,
+                           trip_id_nav=trip_id if current_member_id(trip_id) else None,
+                           nav_active="member")
 
 
 @app.route("/trip/<int:trip_id>/dashboard")
@@ -186,8 +272,7 @@ def dashboard(trip_id):
 
     with get_conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, name, budget FROM trips WHERE id = %s", (trip_id,))
-            trip = cur.fetchone()
+            trip = get_trip(cur, trip_id)
 
             cur.execute(
                 "SELECT COALESCE(SUM(amount),0) AS total FROM receipts WHERE trip_id = %s",
@@ -198,8 +283,13 @@ def dashboard(trip_id):
             cur.execute(
                 """
                 SELECT r.id, r.store_name, r.amount, r.category, r.payment_method, r.txn_date,
-                       r.region, r.translated_text, m.name AS member_name, m.avatar
-                FROM receipts r JOIN members m ON m.id = r.member_id
+                       r.region, m.name AS member_name, m.avatar,
+                       p.name AS payer_name, p.avatar AS payer_avatar,
+                       (SELECT COUNT(*) FROM receipt_splits s WHERE s.receipt_id = r.id) AS split_count,
+                       (r.image IS NOT NULL) AS has_image
+                FROM receipts r
+                JOIN members m ON m.id = r.member_id
+                LEFT JOIN members p ON p.id = COALESCE(r.payer_id, r.member_id)
                 WHERE r.trip_id = %s
                 ORDER BY r.txn_date DESC, r.id DESC
                 """,
@@ -252,6 +342,7 @@ def dashboard(trip_id):
         total_spent=total_spent,
         budget=budget,
         pct=pct,
+        rate=get_twd_rate(),
         receipts=receipts,
         daily_labels=[d["txn_date"].isoformat() for d in daily],
         daily_values=[d["total"] for d in daily],
@@ -260,6 +351,8 @@ def dashboard(trip_id):
         pay_labels=[p["payment_method"] for p in by_payment],
         pay_values=[p["total"] for p in by_payment],
         top10=top10,
+        trip_id_nav=trip_id,
+        nav_active="dashboard",
     )
 
 
@@ -270,6 +363,10 @@ def add_receipt(trip_id):
         return redirect(url_for("pick_member", trip_id=trip_id))
 
     if request.method == "POST":
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                members = get_members(cur, trip_id)
+
         if "photo" in request.files and request.files["photo"].filename:
             photo = request.files["photo"]
             image_bytes = photo.read()
@@ -281,17 +378,15 @@ def add_receipt(trip_id):
                 today=date.today().isoformat(),
                 categories=CATEGORIES,
                 payment_methods=PAYMENT_METHODS,
+                members=members,
+                current_member_id=member_id,
                 image_b64=base64.b64encode(image_bytes).decode("ascii"),
                 image_mime=photo.mimetype,
+                trip_id_nav=trip_id,
+                nav_active="add",
             )
 
-        amount = float(request.form["amount"])
-        tax = request.form.get("tax") or None
-        tax = float(tax) if tax else None
-        category = request.form["category"]
-        payment_method = request.form["payment_method"]
-        txn_date = request.form["txn_date"]
-        store_name = request.form.get("store_name", "")
+        f = parse_receipt_form(request.form)
         raw_text = request.form.get("raw_text", "")
         translated_text = request.form.get("translated_text", "")
 
@@ -299,29 +394,207 @@ def add_receipt(trip_id):
         image_mime = request.form.get("image_mime")
         image_bytes = base64.b64decode(image_b64) if image_b64 else None
 
-        region = find_region(trip_id, txn_date)
+        region = find_region(trip_id, f["txn_date"])
 
         with get_conn() as conn:
             with conn.cursor() as cur:
                 cur.execute(
                     """
                     INSERT INTO receipts
-                        (trip_id, member_id, image, image_mime, store_name, amount, tax,
+                        (trip_id, member_id, payer_id, image, image_mime, store_name, amount, tax,
                          category, payment_method, txn_date, region, raw_text, translated_text)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
                     """,
-                    (trip_id, member_id, image_bytes, image_mime, store_name, amount, tax,
-                     category, payment_method, txn_date, region, raw_text, translated_text),
+                    (trip_id, member_id, f["payer_id"], image_bytes, image_mime, f["store_name"],
+                     f["amount"], f["tax"], f["category"], f["payment_method"], f["txn_date"],
+                     region, raw_text, translated_text),
                 )
+                receipt_id = cur.fetchone()["id"]
+                save_splits(cur, receipt_id, f["split_ids"])
             conn.commit()
         return redirect(url_for("dashboard", trip_id=trip_id))
 
     return render_template(
         "add_receipt.html",
         trip_id=trip_id,
+        trip_id_nav=trip_id,
+        nav_active="add",
+    )
+
+
+@app.route("/trip/<int:trip_id>/manual", methods=["GET", "POST"])
+def manual_entry(trip_id):
+    member_id = current_member_id(trip_id)
+    if not member_id:
+        return redirect(url_for("pick_member", trip_id=trip_id))
+
+    if request.method == "POST":
+        f = parse_receipt_form(request.form)
+        region = find_region(trip_id, f["txn_date"])
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO receipts
+                        (trip_id, member_id, payer_id, store_name, amount, tax,
+                         category, payment_method, txn_date, region)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    RETURNING id
+                    """,
+                    (trip_id, member_id, f["payer_id"], f["store_name"], f["amount"], f["tax"],
+                     f["category"], f["payment_method"], f["txn_date"], region),
+                )
+                receipt_id = cur.fetchone()["id"]
+                save_splits(cur, receipt_id, f["split_ids"])
+            conn.commit()
+        return redirect(url_for("dashboard", trip_id=trip_id))
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            members = get_members(cur, trip_id)
+    return render_template(
+        "receipt_form.html",
+        mode="manual",
+        trip_id=trip_id,
+        receipt=None,
+        split_ids=[m["id"] for m in members],  # 預設全員均分
         today=date.today().isoformat(),
         categories=CATEGORIES,
         payment_methods=PAYMENT_METHODS,
+        members=members,
+        current_member_id=member_id,
+        trip_id_nav=trip_id,
+        nav_active="manual",
+    )
+
+
+@app.route("/trip/<int:trip_id>/receipt/<int:receipt_id>/edit", methods=["GET", "POST"])
+def edit_receipt(trip_id, receipt_id):
+    member_id = current_member_id(trip_id)
+    if not member_id:
+        return redirect(url_for("pick_member", trip_id=trip_id))
+
+    if request.method == "POST":
+        f = parse_receipt_form(request.form)
+        region = find_region(trip_id, f["txn_date"])
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE receipts SET store_name = %s, amount = %s, tax = %s, category = %s,
+                        payment_method = %s, txn_date = %s, region = %s, payer_id = %s
+                    WHERE id = %s AND trip_id = %s
+                    """,
+                    (f["store_name"], f["amount"], f["tax"], f["category"], f["payment_method"],
+                     f["txn_date"], region, f["payer_id"], receipt_id, trip_id),
+                )
+                save_splits(cur, receipt_id, f["split_ids"])
+            conn.commit()
+        return redirect(url_for("dashboard", trip_id=trip_id))
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT * FROM receipts WHERE id = %s AND trip_id = %s", (receipt_id, trip_id)
+            )
+            receipt = cur.fetchone()
+            if not receipt:
+                return redirect(url_for("dashboard", trip_id=trip_id))
+            cur.execute("SELECT member_id FROM receipt_splits WHERE receipt_id = %s", (receipt_id,))
+            split_ids = [r["member_id"] for r in cur.fetchall()]
+            members = get_members(cur, trip_id)
+    return render_template(
+        "receipt_form.html",
+        mode="edit",
+        trip_id=trip_id,
+        receipt=receipt,
+        split_ids=split_ids,
+        today=receipt["txn_date"].isoformat(),
+        categories=CATEGORIES,
+        payment_methods=PAYMENT_METHODS,
+        members=members,
+        current_member_id=receipt["payer_id"] or receipt["member_id"],
+        trip_id_nav=trip_id,
+        nav_active="dashboard",
+    )
+
+
+@app.route("/trip/<int:trip_id>/settle")
+def settle(trip_id):
+    member_id = current_member_id(trip_id)
+    if not member_id:
+        return redirect(url_for("pick_member", trip_id=trip_id))
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            trip = get_trip(cur, trip_id)
+            members = get_members(cur, trip_id)
+            cur.execute(
+                "SELECT id, amount, COALESCE(payer_id, member_id) AS payer FROM receipts WHERE trip_id = %s",
+                (trip_id,),
+            )
+            receipts = cur.fetchall()
+            cur.execute(
+                """
+                SELECT s.receipt_id, s.member_id FROM receipt_splits s
+                JOIN receipts r ON r.id = s.receipt_id WHERE r.trip_id = %s
+                """,
+                (trip_id,),
+            )
+            splits = {}
+            for row in cur.fetchall():
+                splits.setdefault(row["receipt_id"], []).append(row["member_id"])
+
+    minfo = {m["id"]: m for m in members}
+    paid = {m["id"]: 0.0 for m in members}    # 實際掏錢
+    share = {m["id"]: 0.0 for m in members}   # 應該分攤
+    for r in receipts:
+        payer = r["payer"]
+        if payer not in paid:
+            continue
+        paid[payer] += r["amount"]
+        split_members = [m for m in splits.get(r["id"], []) if m in share]
+        if split_members:
+            each = r["amount"] / len(split_members)
+            for m in split_members:
+                share[m] += each
+        else:
+            share[payer] += r["amount"]  # 沒設定分帳 → 當付款人自己的花費
+
+    balances = {mid: paid[mid] - share[mid] for mid in paid}  # 正=別人欠他
+
+    # 最少轉帳次數的貪婪結算
+    creditors = sorted(((mid, b) for mid, b in balances.items() if b > 0.5), key=lambda x: -x[1])
+    debtors = sorted(((mid, -b) for mid, b in balances.items() if b < -0.5), key=lambda x: -x[1])
+    transfers = []
+    ci, di = 0, 0
+    creditors = [list(c) for c in creditors]
+    debtors = [list(d) for d in debtors]
+    while ci < len(creditors) and di < len(debtors):
+        give = min(creditors[ci][1], debtors[di][1])
+        transfers.append({"from": minfo[debtors[di][0]], "to": minfo[creditors[ci][0]], "amount": give})
+        creditors[ci][1] -= give
+        debtors[di][1] -= give
+        if creditors[ci][1] < 0.5:
+            ci += 1
+        if debtors[di][1] < 0.5:
+            di += 1
+
+    rows = [
+        {"m": minfo[mid], "paid": paid[mid], "share": share[mid], "balance": balances[mid]}
+        for mid in paid
+    ]
+    rows.sort(key=lambda r: -r["balance"])
+
+    return render_template(
+        "settle.html",
+        trip=trip,
+        rows=rows,
+        transfers=transfers,
+        rate=get_twd_rate(),
+        trip_id_nav=trip_id,
+        nav_active="settle",
     )
 
 
@@ -331,6 +604,10 @@ def delete_receipt(trip_id, receipt_id):
         return redirect(url_for("pick_member", trip_id=trip_id))
     with get_conn() as conn:
         with conn.cursor() as cur:
+            cur.execute(
+                "DELETE FROM receipt_splits WHERE receipt_id IN (SELECT id FROM receipts WHERE id = %s AND trip_id = %s)",
+                (receipt_id, trip_id),
+            )
             cur.execute("DELETE FROM receipts WHERE id = %s AND trip_id = %s", (receipt_id, trip_id))
         conn.commit()
     return redirect(url_for("dashboard", trip_id=trip_id))

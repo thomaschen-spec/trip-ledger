@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+{% block title %}分帳結算 — 旅行手帳{% endblock %}
+{% block style %}
+  .person { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1.5px dashed var(--line); }
+  .person:last-child { border-bottom: none; }
+  .person .info { flex: 1; }
+  .person .name { font-weight: bold; }
+  .person .nums { font-size: 0.76rem; color: var(--ink-soft); margin-top: 2px; }
+  .person .net { font-family: "Noto Serif TC", serif; font-weight: bold; text-align: right; }
+  .net.plus { color: var(--leaf); }
+  .net.minus { color: var(--accent); }
+  .net .lbl { display: block; font-size: 0.68rem; font-weight: normal; color: var(--ink-soft); font-family: inherit; }
+  .transfer { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin-bottom: 8px; box-shadow: 0 1px 3px rgba(61,50,38,0.06); }
+  .transfer .arrow { color: var(--accent); font-weight: bold; }
+  .transfer .amt { margin-left: auto; text-align: right; font-family: "Noto Serif TC", serif; font-weight: bold; color: var(--accent); }
+  .transfer .amt .twd { display: block; font-size: 0.72rem; font-weight: normal; color: var(--ink-soft); }
+  .all-clear { text-align: center; padding: 24px; color: var(--ink-soft); }
+{% endblock %}
+{% block content %}
+  <h1><span class="deco">🤝</span>分帳結算</h1>
+  <p class="page-sub">{{ trip.name }}・只計入有勾「分攤」的帳，個人花費不列入</p>
+
+  <div class="card taped">
+    <h2 class="serif" style="font-size:0.95rem; margin:0 0 4px;">每個人的收支</h2>
+    {% for row in rows %}
+    <div class="person">
+      <span class="avatar">{{ row.m.avatar }}</span>
+      <div class="info">
+        <div class="name">{{ row.m.name }}</div>
+        <div class="nums">實付 ¥{{ "{:,.0f}".format(row.paid) }}・應攤 ¥{{ "{:,.0f}".format(row.share) }}</div>
+      </div>
+      <div class="net {% if row.balance > 0.5 %}plus{% elif row.balance < -0.5 %}minus{% endif %}">
+        <span class="lbl">{% if row.balance > 0.5 %}該收回{% elif row.balance < -0.5 %}該補給大家{% else %}剛剛好{% endif %}</span>
+        ¥{{ "{:,.0f}".format(row.balance|abs) }}
+      </div>
+    </div>
+    {% else %}
+    <p class="hint">還沒有成員。</p>
+    {% endfor %}
+  </div>
+
+  <h2 class="serif" style="font-size:1rem;">💸 這樣轉帳就結清</h2>
+  {% for t in transfers %}
+  <div class="transfer">
+    <span class="avatar sm">{{ t.from.avatar }}</span>{{ t.from.name }}
+    <span class="arrow">→</span>
+    <span class="avatar sm">{{ t.to.avatar }}</span>{{ t.to.name }}
+    <span class="amt">¥{{ "{:,.0f}".format(t.amount) }}
+      {% if rate %}<span class="twd">≈NT$ {{ "{:,.0f}".format(t.amount * rate) }}</span>{% endif %}
+    </span>
+  </div>
+  {% else %}
+  <div class="card all-clear">✨ 目前大家兩不相欠，不用轉帳！</div>
+  {% endfor %}
+{% endblock %}

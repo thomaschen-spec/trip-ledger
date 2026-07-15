@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}旅行手帳{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f6f1e6;
+    --card: #fffdf7;
+    --ink: #3d3226;
+    --ink-soft: #8a7d6a;
+    --line: #e6dcc8;
+    --accent: #c9573f;      /* 印章紅 */
+    --accent-soft: #f3ddd6;
+    --leaf: #4a7c62;        /* 郵票綠 */
+    --gold: #d99a2b;        /* 琥珀 */
+    --gold-soft: #f5e7c8;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif;
+    background: var(--paper);
+    background-image: repeating-linear-gradient(transparent, transparent 27px, rgba(61,50,38,0.045) 27px, rgba(61,50,38,0.045) 28px);
+    margin: 0; padding: 16px; color: var(--ink);
+  }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h1, h2, .serif { font-family: "Noto Serif TC", "Microsoft JhengHei", serif; }
+  h1 { font-size: 1.35rem; margin: 4px 0 4px; letter-spacing: 0.02em; }
+  h1 .deco { color: var(--accent); margin-right: 6px; }
+  .page-sub { color: var(--ink-soft); font-size: 0.82rem; margin: 0 0 16px; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: 16px; margin-bottom: 14px; box-shadow: 0 2px 6px rgba(61,50,38,0.07);
+    position: relative;
+  }
+  .card.taped::before {
+    content: ""; position: absolute; top: -8px; left: 50%; transform: translateX(-50%) rotate(-2deg);
+    width: 84px; height: 18px; background: rgba(217,154,43,0.35); border-radius: 2px;
+  }
+
+  label { display: block; font-size: 0.83rem; margin-top: 10px; color: var(--ink-soft); }
+  input, select, textarea {
+    width: 100%; padding: 10px; margin-top: 4px; border: 1px solid var(--line);
+    border-radius: 8px; font-size: 1rem; background: #fff; color: var(--ink);
+    font-family: inherit;
+  }
+  input:focus, select:focus, textarea:focus { outline: 2px solid var(--gold-soft); border-color: var(--gold); }
+
+  .btn {
+    display: block; width: 100%; text-align: center; margin-top: 14px; padding: 12px;
+    background: var(--ink); color: #f5e7c8; border: none; border-radius: 8px;
+    font-size: 1rem; cursor: pointer; text-decoration: none; font-weight: bold;
+    font-family: inherit;
+  }
+  .btn.green { background: var(--leaf); color: #fff; }
+  .btn.red { background: var(--accent); color: #fff; }
+  .btn.ghost { background: transparent; color: var(--ink-soft); border: 1.5px dashed var(--line); font-weight: normal; }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .stamp {
+    display: inline-block; border: 1.5px solid var(--accent); color: var(--accent);
+    border-radius: 6px; padding: 1px 7px; font-size: 0.72rem; font-weight: bold;
+    transform: rotate(-1deg); background: rgba(255,255,255,0.6);
+  }
+  .stamp.green { border-color: var(--leaf); color: var(--leaf); }
+  .stamp.gold { border-color: var(--gold); color: var(--gold); }
+
+  .chip {
+    display: inline-block; background: var(--gold-soft); color: var(--ink);
+    border-radius: 999px; padding: 2px 9px; font-size: 0.74rem;
+  }
+
+  a.back { display: inline-block; margin-top: 12px; color: var(--ink-soft); text-decoration: none; font-size: 0.9rem; }
+  .hint { color: var(--ink-soft); font-size: 0.82rem; margin-bottom: 12px; }
+  .dashed-sep { border: none; border-top: 1.5px dashed var(--line); margin: 10px 0; }
+
+  .avatar {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 38px; height: 38px; border-radius: 50%; background: var(--gold-soft);
+    border: 1.5px solid var(--gold); font-size: 1.15rem; flex-shrink: 0;
+  }
+  .avatar.sm { width: 26px; height: 26px; font-size: 0.85rem; border-width: 1px; }
+
+  .bottom-nav {
+    position: fixed; bottom: 0; left: 0; right: 0; background: var(--card);
+    border-top: 1px solid var(--line);
+    display: flex; justify-content: space-around;
+    padding: 7px 0 max(7px, env(safe-area-inset-bottom)); z-index: 10;
+    box-shadow: 0 -2px 8px rgba(61,50,38,0.06);
+  }
+  .bottom-nav a { text-decoration: none; color: var(--ink-soft); font-size: 0.66rem; text-align: center; flex: 1; }
+  .bottom-nav a .ico { display: block; font-size: 1.35rem; }
+  .bottom-nav a.active { color: var(--accent); font-weight: bold; }
+  {% block style %}{% endblock %}
+</style>
+{% block head %}{% endblock %}
+</head>
+<body{% if trip_id_nav is defined and trip_id_nav %} style="padding-bottom: 86px;"{% endif %}>
+<div class="wrap">
+{% block content %}{% endblock %}
+</div>
+
+{% if trip_id_nav is defined and trip_id_nav %}
+<nav class="bottom-nav">
+  <a{% if nav_active == 'dashboard' %} class="active"{% endif %} href="{{ url_for('dashboard', trip_id=trip_id_nav) }}"><span class="ico">📖</span>帳本</a>
+  <a{% if nav_active == 'add' %} class="active"{% endif %} href="{{ url_for('add_receipt', trip_id=trip_id_nav) }}"><span class="ico">📷</span>拍收據</a>
+  <a{% if nav_active == 'manual' %} class="active"{% endif %} href="{{ url_for('manual_entry', trip_id=trip_id_nav) }}"><span class="ico">✍️</span>記一筆</a>
+  <a{% if nav_active == 'settle' %} class="active"{% endif %} href="{{ url_for('settle', trip_id=trip_id_nav) }}"><span class="ico">🤝</span>結算</a>
+  <a{% if nav_active == 'member' %} class="active"{% endif %} href="{{ url_for('pick_member', trip_id=trip_id_nav) }}"><span class="ico">👥</span>成員</a>
+</nav>
+{% endif %}
+{% block scripts %}{% endblock %}
+</body>
+</html>

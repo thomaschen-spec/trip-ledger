@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}{% if mode == 'edit' %}修改記帳{% else %}手動記一筆{% endif %} — 旅行手帳{% endblock %}
+{% block style %}
+  .member-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .member-checks label { margin: 0; cursor: pointer; }
+  .member-checks input { display: none; }
+  .member-checks .pill { display: inline-flex; align-items: center; gap: 4px; border: 1.5px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 0.9rem; color: var(--ink-soft); background: #fff; }
+  .member-checks input:checked + .pill { border-color: var(--leaf); color: var(--leaf); background: #eef5f0; font-weight: bold; }
+{% endblock %}
+{% block content %}
+  <h1><span class="deco">{% if mode == 'edit' %}✏️{% else %}✍️{% endif %}</span>{% if mode == 'edit' %}修改這筆記帳{% else %}手動記一筆{% endif %}</h1>
+  {% if mode == 'manual' %}<p class="page-sub">沒收據也能記：吃路邊攤、投販賣機、給小費都算數。</p>{% endif %}
+
+  <form class="card taped" method="post">
+    <label>花在哪（店名或項目）</label>
+    <input type="text" name="store_name" value="{{ receipt.store_name if receipt else '' }}" placeholder="例如：便利商店買飲料">
+
+    <label>金額（日圓）</label>
+    <input type="number" step="1" inputmode="numeric" name="amount" value="{{ ('%.0f'|format(receipt.amount)) if receipt else '' }}" required>
+
+    <label>其中稅金（選填）</label>
+    <input type="number" step="1" inputmode="numeric" name="tax" value="{{ ('%.0f'|format(receipt.tax)) if receipt and receipt.tax else '' }}">
+
+    <label>分類</label>
+    <select name="category">
+      {% for c in categories %}<option value="{{ c }}"{% if receipt and receipt.category == c %} selected{% endif %}>{{ c }}</option>{% endfor %}
+    </select>
+
+    <label>付款方式</label>
+    <select name="payment_method">
+      {% for p in payment_methods %}<option value="{{ p }}"{% if receipt and receipt.payment_method == p %} selected{% endif %}>{{ p }}</option>{% endfor %}
+    </select>
+
+    <label>消費日期</label>
+    <input type="date" name="txn_date" value="{{ today }}" required>
+
+    <hr class="dashed-sep">
+
+    <label>誰付的錢？</label>
+    <select name="payer_id">
+      {% for m in members %}<option value="{{ m.id }}"{% if m.id == current_member_id %} selected{% endif %}>{{ m.avatar }} {{ m.name }}</option>{% endfor %}
+    </select>
+
+    <label>這筆誰要分攤？（結算時會平均分給勾選的人）</label>
+    <div class="member-checks">
+      {% for m in members %}
+      <label>
+        <input type="checkbox" name="split_ids" value="{{ m.id }}"{% if m.id in split_ids %} checked{% endif %}>
+        <span class="pill">{{ m.avatar }} {{ m.name }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <p class="hint" style="margin-top:6px;">都不勾＝付款人自己出，不列入分帳。</p>
+
+    <button class="btn red" type="submit">{% if mode == 'edit' %}儲存修改{% else %}存入手帳{% endif %}</button>
+  </form>
+  <a class="back" href="{{ url_for('dashboard', trip_id=trip_id) }}">← 回帳本</a>
+{% endblock %}

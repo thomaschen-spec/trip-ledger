@@ -1,69 +1,55 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>拍收據</title>
-<style>
-  body { font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif; background: #f5f3ef; margin: 0; padding: 16px; color: #2b2b2b; }
-  .wrap { max-width: 480px; margin: 0 auto; }
-  h1 { font-size: 1.3rem; }
-  form { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  label { display: block; font-size: 0.9rem; margin-top: 8px; color: #666; }
-  button { margin-top: 12px; width: 100%; padding: 12px; background: #2b2b2b; color: #f5c977; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
-  a.back { display: inline-block; margin-top: 12px; color: #666; text-decoration: none; font-size: 0.9rem; }
-  .hint { color: #888; font-size: 0.8rem; margin-bottom: 12px; }
+{% extends "base.html" %}
+{% block title %}拍收據 — 旅行手帳{% endblock %}
+{% block style %}
   input[type="file"] { display: none; }
   .photo-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
-    width: 100%; padding: 32px 16px; margin-top: 4px; background: #f5f3ef; border: 2px dashed #ccc;
-    border-radius: 10px; font-size: 1rem; color: #2b2b2b; box-sizing: border-box; cursor: pointer; }
-  .photo-btn .icon { font-size: 2.2rem; }
-  .photo-btn.picked { border-style: solid; border-color: #27ae60; color: #27ae60; }
-  .submit-btn { margin-top: 12px; width: 100%; padding: 12px; background: #2b2b2b; color: #f5c977; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
-  .submit-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e5e1da;
-    display: flex; justify-content: space-around; padding: 8px 0 max(8px, env(safe-area-inset-bottom)); z-index: 10; }
-  .bottom-nav a { text-decoration: none; color: #888; font-size: 0.7rem; text-align: center; flex: 1; }
-  .bottom-nav a .ico { display: block; font-size: 1.4rem; }
-  .bottom-nav a.active { color: #27ae60; font-weight: bold; }
-  body { padding-bottom: 80px; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>拍收據</h1>
-  <p class="hint">拍照或選圖後，系統會自動辨識文字並翻譯，辨識不一定準，下一步可以修改。</p>
-  <form method="post" enctype="multipart/form-data" id="receiptForm">
+    width: 100%; padding: 36px 16px; margin-top: 4px; background: var(--paper); border: 2px dashed var(--gold);
+    border-radius: 10px; font-size: 1rem; color: var(--ink); box-sizing: border-box; cursor: pointer; }
+  .photo-btn .icon { font-size: 2.4rem; }
+  .photo-btn.picked { border-style: solid; border-color: var(--leaf); color: var(--leaf); background: #eef5f0; }
+  .ocr-loading { display: none; text-align: center; padding: 20px; color: var(--ink-soft); }
+  .ocr-loading.show { display: block; }
+  .ocr-loading .dots span { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); margin: 0 3px; animation: bounce 1.1s infinite ease-in-out; }
+  .ocr-loading .dots span:nth-child(2) { animation-delay: 0.15s; }
+  .ocr-loading .dots span:nth-child(3) { animation-delay: 0.3s; }
+  @keyframes bounce { 0%, 100% { transform: translateY(0); opacity: 0.4; } 50% { transform: translateY(-7px); opacity: 1; } }
+{% endblock %}
+{% block content %}
+  <h1><span class="deco">📷</span>拍收據</h1>
+  <p class="page-sub">拍照或選圖後自動辨識、翻譯，下一步還能修改。</p>
+  <form class="card taped" method="post" enctype="multipart/form-data" id="receiptForm">
     <label for="photoInput">收據照片</label>
     <label class="photo-btn" id="photoBtn" for="photoInput">
       <span class="icon">📷</span>
       <span id="photoBtnText">拍照或選圖</span>
     </label>
     <input type="file" id="photoInput" name="photo" accept="image/*" capture="environment" required>
-    <button class="submit-btn" type="submit" id="submitBtn" disabled>辨識收據 →</button>
+    <button class="btn red" type="submit" id="submitBtn" disabled>辨識收據 →</button>
+    <div class="ocr-loading" id="ocrLoading">
+      <div class="dots"><span></span><span></span><span></span></div>
+      <div style="margin-top:8px; font-size:0.85rem;">正在辨識和翻譯收據，通常幾秒鐘…</div>
+    </div>
   </form>
+  <p class="hint" style="margin-top:12px;">沒有收據？<a href="{{ url_for('manual_entry', trip_id=trip_id) }}" style="color:var(--accent);">改用手動記一筆 →</a></p>
   <a class="back" href="{{ url_for('dashboard', trip_id=trip_id) }}">← 回帳本</a>
-
-  <nav class="bottom-nav">
-    <a href="{{ url_for('dashboard', trip_id=trip_id) }}"><span class="ico">📊</span>儀表板</a>
-    <a class="active" href="{{ url_for('add_receipt', trip_id=trip_id) }}"><span class="ico">📷</span>拍收據</a>
-    <a href="{{ url_for('itinerary', trip_id=trip_id) }}"><span class="ico">🗺️</span>行程</a>
-    <a href="{{ url_for('pick_member', trip_id=trip_id) }}"><span class="ico">👥</span>成員</a>
-  </nav>
-
-  <script>
-    var input = document.getElementById('photoInput');
-    var btn = document.getElementById('photoBtn');
-    var btnText = document.getElementById('photoBtnText');
-    var submitBtn = document.getElementById('submitBtn');
-    input.addEventListener('change', function () {
-      if (input.files && input.files.length > 0) {
-        btn.classList.add('picked');
-        btnText.textContent = '已選擇：' + input.files[0].name;
-        submitBtn.disabled = false;
-      }
-    });
-  </script>
-</div>
-</body>
-</html>
+{% endblock %}
+{% block scripts %}
+<script>
+  var input = document.getElementById('photoInput');
+  var btn = document.getElementById('photoBtn');
+  var btnText = document.getElementById('photoBtnText');
+  var submitBtn = document.getElementById('submitBtn');
+  input.addEventListener('change', function () {
+    if (input.files && input.files.length > 0) {
+      btn.classList.add('picked');
+      btnText.textContent = '已選擇：' + input.files[0].name;
+      submitBtn.disabled = false;
+    }
+  });
+  document.getElementById('receiptForm').addEventListener('submit', function () {
+    submitBtn.disabled = true;
+    submitBtn.textContent = '辨識中…';
+    document.getElementById('ocrLoading').classList.add('show');
+  });
+</script>
+{% endblock %}

@@ -1,39 +1,73 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>旅遊記帳</title>
-<style>
-  body { font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif; background: #f5f3ef; margin: 0; padding: 16px; color: #2b2b2b; }
-  .wrap { max-width: 480px; margin: 0 auto; }
-  h1 { font-size: 1.3rem; }
-  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  .card a { text-decoration: none; color: #2b2b2b; font-weight: bold; }
-  .card .sub { color: #888; font-size: 0.85rem; margin-top: 4px; }
-  form.new { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  label { display: block; font-size: 0.85rem; margin-top: 8px; color: #666; }
-  input { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
-  button { margin-top: 12px; width: 100%; padding: 10px; background: #2b2b2b; color: #f5c977; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>旅遊記帳</h1>
-  {% for t in trips %}
-  <div class="card">
-    <a href="{{ url_for('dashboard', trip_id=t.id) }}">{{ t.name }}</a>
-    <div class="sub">預算 {{ "%.0f"|format(t.budget) }}</div>
-  </div>
-  {% endfor %}
+{% extends "base.html" %}
+{% block title %}旅行手帳 — 旅遊記帳{% endblock %}
+{% block style %}
+  .trip-card { display: block; text-decoration: none; color: var(--ink); }
+  .trip-card h2 { margin: 0 0 6px; font-size: 1.1rem; }
+  .trip-card .dates { color: var(--ink-soft); font-size: 0.8rem; }
+  .trip-card .row { display: flex; justify-content: space-between; align-items: center; margin-top: 8px; }
+  .trip-card .avatars { font-size: 1.05rem; letter-spacing: -2px; }
+  .trip-card .spent { font-size: 0.85rem; color: var(--ink-soft); }
+  .trip-card .spent b { color: var(--accent); font-size: 1rem; }
+  .mini-bar { background: var(--line); border-radius: 6px; height: 8px; margin-top: 8px; overflow: hidden; }
+  .mini-bar .fill { background: linear-gradient(90deg, var(--gold), var(--accent)); height: 100%; }
+  .empty { text-align: center; padding: 28px 16px; }
+  .empty .big { font-size: 3rem; }
+  .empty h2 { margin: 8px 0 4px; }
+  .steps { text-align: left; margin: 16px auto 0; max-width: 320px; padding: 0; list-style: none; }
+  .steps li { display: flex; gap: 10px; align-items: flex-start; margin-bottom: 10px; font-size: 0.9rem; color: var(--ink-soft); }
+  .steps .n { flex-shrink: 0; width: 22px; height: 22px; border-radius: 50%; background: var(--accent); color: #fff; font-size: 0.8rem; display: inline-flex; align-items: center; justify-content: center; font-weight: bold; }
+  details.new-trip summary { list-style: none; cursor: pointer; }
+  details.new-trip summary::-webkit-details-marker { display: none; }
+{% endblock %}
+{% block content %}
+  <h1><span class="deco">✈</span>旅行手帳</h1>
+  <p class="page-sub">拍收據自動記帳・多人分帳・旅程回憶都在這一本</p>
 
-  <form class="new" method="post" action="{{ url_for('new_trip') }}">
-    <label>新旅行名稱</label>
-    <input type="text" name="name" placeholder="例如：日本東京5日遊" required>
-    <label>總預算（選填）</label>
-    <input type="number" step="1" name="budget" placeholder="例如：50000">
-    <button type="submit">建立旅行帳本</button>
-  </form>
-</div>
-</body>
-</html>
+  {% if trips %}
+    {% for t in trips %}
+    <a class="card taped trip-card" href="{{ url_for('dashboard', trip_id=t.id) }}">
+      <h2 class="serif">{{ t.name }}</h2>
+      <div class="dates">
+        {% if t.dates %}🗓 {{ t.dates.start_date }} ～ {{ t.dates.end_date }}{% else %}🗓 尚未設定行程日期{% endif %}
+      </div>
+      <div class="row">
+        <span class="avatars">{% for a in t.avatars %}{{ a }}{% endfor %}{% if not t.avatars %}<span class="chip">還沒有成員</span>{% endif %}</span>
+        <span class="spent">已花 <b>¥{{ "{:,.0f}".format(t.spent) }}</b>{% if t.budget %} / ¥{{ "{:,.0f}".format(t.budget) }}{% endif %}</span>
+      </div>
+      {% if t.pct is not none %}
+      <div class="mini-bar"><div class="fill" style="width: {{ t.pct }}%;"></div></div>
+      {% endif %}
+      <div style="margin-top:8px;"><span class="stamp gold">{{ t.receipt_count }} 筆記帳</span></div>
+    </a>
+    {% endfor %}
+
+    <details class="new-trip">
+      <summary class="btn ghost">＋ 開一本新的旅行手帳</summary>
+      <form class="card" method="post" action="{{ url_for('new_trip') }}" style="margin-top:12px;">
+        <label>旅行名稱</label>
+        <input type="text" name="name" placeholder="例如：日本東京5日遊" required>
+        <label>總預算（日圓，選填）</label>
+        <input type="number" step="1" name="budget" placeholder="例如：150000">
+        <button class="btn" type="submit">建立旅行帳本</button>
+      </form>
+    </details>
+  {% else %}
+    <div class="card taped empty">
+      <div class="big">🧳</div>
+      <h2 class="serif">還沒有任何旅程</h2>
+      <p class="hint">三步驟開始你的第一本旅行帳：</p>
+      <ol class="steps">
+        <li><span class="n">1</span><span>幫旅行取個名字、填個預算（可跳過）</span></li>
+        <li><span class="n">2</span><span>設定行程日期和地區，收據會自動判斷消費地點</span></li>
+        <li><span class="n">3</span><span>每個旅伴選一個頭像，拍收據就開始記帳！</span></li>
+      </ol>
+    </div>
+    <form class="card" method="post" action="{{ url_for('new_trip') }}">
+      <label>旅行名稱</label>
+      <input type="text" name="name" placeholder="例如：日本東京5日遊" required>
+      <label>總預算（日圓，選填）</label>
+      <input type="number" step="1" name="budget" placeholder="例如：150000">
+      <button class="btn red" type="submit">🧳 建立我的第一本旅行帳</button>
+    </form>
+  {% endif %}
+{% endblock %}

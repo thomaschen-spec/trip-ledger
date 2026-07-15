@@ -1,50 +1,42 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>你是誰？ — {{ trip.name }}</title>
-<style>
-  body { font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif; background: #f5f3ef; margin: 0; padding: 16px; color: #2b2b2b; }
-  .wrap { max-width: 480px; margin: 0 auto; }
-  h1 { font-size: 1.3rem; }
+{% extends "base.html" %}
+{% block title %}你是誰？ — {{ trip.name }}{% endblock %}
+{% block style %}
   .members { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
   .members form { margin: 0; }
-  .members button { background: #fff; border: 1px solid #ddd; border-radius: 10px; padding: 12px 16px; font-size: 1rem; cursor: pointer; }
-  form.new { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  label { display: block; font-size: 0.85rem; margin-top: 8px; color: #666; }
-  input { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
-  .avatars { display: flex; gap: 6px; margin-top: 4px; flex-wrap: wrap; }
-  .avatars label { display: inline-block; margin: 0; font-size: 1.4rem; cursor: pointer; }
-  button.submit { margin-top: 12px; width: 100%; padding: 10px; background: #2b2b2b; color: #f5c977; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>{{ trip.name }}</h1>
-  <p>你是誰？</p>
+  .members button { display: flex; align-items: center; gap: 8px; background: var(--card); border: 1.5px solid var(--line);
+    border-radius: 12px; padding: 10px 16px; font-size: 1rem; cursor: pointer; color: var(--ink); font-family: inherit;
+    box-shadow: 0 1px 3px rgba(61,50,38,0.06); }
+  .members button:active { border-color: var(--gold); }
+  .avatars { display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap; }
+  .avatars label { margin: 0; cursor: pointer; }
+  .avatars input { display: none; }
+  .avatars .face { display: inline-flex; align-items: center; justify-content: center; width: 44px; height: 44px;
+    border-radius: 50%; border: 2px solid var(--line); font-size: 1.4rem; background: #fff; }
+  .avatars input:checked + .face { border-color: var(--accent); background: var(--accent-soft); transform: scale(1.08); }
+{% endblock %}
+{% block content %}
+  <h1><span class="deco">👥</span>{{ trip.name }}</h1>
+  <p class="page-sub">你是誰？選自己的頭像進入手帳，記帳會記在你名下。</p>
   <div class="members">
     {% for m in members %}
     <form method="post">
       <input type="hidden" name="action" value="select">
       <input type="hidden" name="member_id" value="{{ m.id }}">
-      <button type="submit">{{ m.avatar }} {{ m.name }}</button>
+      <button type="submit"><span class="avatar sm">{{ m.avatar }}</span>{{ m.name }}</button>
     </form>
     {% endfor %}
   </div>
 
-  <form class="new" method="post">
+  <form class="card taped" method="post">
     <input type="hidden" name="action" value="create">
     <label>我是新成員，我的名字</label>
     <input type="text" name="name" required>
     <label>選一個頭像</label>
     <div class="avatars">
       {% for a in avatars %}
-      <label><input type="radio" name="avatar" value="{{ a }}" {% if loop.first %}checked{% endif %} style="display:none;">{{ a }}</label>
+      <label><input type="radio" name="avatar" value="{{ a }}" {% if loop.first %}checked{% endif %}><span class="face">{{ a }}</span></label>
       {% endfor %}
     </div>
-    <button class="submit" type="submit">加入這趟旅行</button>
+    <button class="btn red" type="submit">加入這趟旅行</button>
   </form>
-</div>
-</body>
-</html>
+{% endblock %}

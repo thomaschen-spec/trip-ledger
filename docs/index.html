@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>旅行手帳 — 旅遊記帳</title>
+<style>
+  :root { --paper:#f6f1e6; --card:#fffdf7; --ink:#3d3226; --ink-soft:#8a7d6a; --line:#e6dcc8;
+    --accent:#c9573f; --leaf:#4a7c62; --gold:#d99a2b; --gold-soft:#f5e7c8; }
+  body { font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif; background: var(--paper);
+    background-image: repeating-linear-gradient(transparent, transparent 27px, rgba(61,50,38,0.045) 27px, rgba(61,50,38,0.045) 28px);
+    margin: 0; padding: 24px 16px; color: var(--ink); }
+  .wrap { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; } h1 .deco { color: var(--accent); }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px;
+    margin-bottom: 14px; box-shadow: 0 2px 6px rgba(61,50,38,0.07); position: relative; }
+  .card.taped::before { content: ""; position: absolute; top: -8px; left: 50%; transform: translateX(-50%) rotate(-2deg);
+    width: 84px; height: 18px; background: rgba(217,154,43,0.35); border-radius: 2px; }
+  .cta { display: inline-block; background: var(--accent); color: #fff; padding: 12px 26px; border-radius: 8px;
+    text-decoration: none; font-weight: bold; }
+  .cta.loading { opacity: 0.7; cursor: wait; }
+  .stack span { display: inline-block; background: var(--gold-soft); color: var(--ink); padding: 4px 10px;
+    border-radius: 6px; font-size: 0.85rem; margin: 2px; }
+  .note { font-size: 0.85rem; color: var(--ink-soft); margin-top: 8px; }
+  .spinner { display: none; align-items: center; gap: 8px; margin-top: 12px; font-size: 0.9rem; color: var(--ink-soft); }
+  .spinner.show { display: flex; }
+  .spinner .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--gold); animation: pulse 1s infinite ease-in-out; }
+  @keyframes pulse { 0%,100% { transform: scale(0.7); opacity: 0.5; } 50% { transform: scale(1.2); opacity: 1; } }
+  ul { padding-left: 20px; } li { margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1><span class="deco">✈</span> 旅行手帳（trip-ledger）</h1>
+
+  <div class="card taped">
+    <p>多人旅行記帳工具：拍日文收據自動辨識金額並翻譯、手動快速記帳、
+    誰付的錢自動分帳、日圓即時換算台幣、預算進度與統計圖表。</p>
+    <a class="cta" id="ctaBtn" href="https://trip-ledger.onrender.com" target="_blank">打開旅行手帳 →</a>
+    <div class="spinner" id="spinner"><span class="dot"></span> 手帳剛才在休息，正在叫醒它（通常不到1分鐘）…</div>
+    <p class="note">用的是免費雲端方案，15分鐘沒人用會小睡；第一次點開會自動叫醒，不用重新整理。</p>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1rem;">主要功能</h2>
+    <ul>
+      <li>📷 拍收據 → 日文 OCR 辨識店名/金額 → 翻成繁中 → 確認後存檔</li>
+      <li>✍️ 沒收據也能手動快速記一筆</li>
+      <li>🤝 每筆可選「誰付的、誰分攤」，旅程結束一鍵算出誰給誰多少</li>
+      <li>💱 日圓金額即時換算台幣參考價</li>
+      <li>📊 預算進度、每日趨勢、分類占比、付款方式統計</li>
+      <li>👥 多人共用，選頭像即可，不用註冊帳密</li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size:1rem;">技術組合</h2>
+    <div class="stack">
+      <span>Flask</span><span>Neon (Postgres)</span><span>Render (Docker)</span><span>Tesseract OCR</span><span>Chart.js</span>
+    </div>
+  </div>
+</div>
+<script>
+  var APP_URL = "https://trip-ledger.onrender.com";
+  var ctaBtn = document.getElementById("ctaBtn");
+  var spinner = document.getElementById("spinner");
+  ctaBtn.addEventListener("click", function (e) {
+    e.preventDefault();
+    ctaBtn.classList.add("loading");
+    ctaBtn.textContent = "叫醒中…";
+    spinner.classList.add("show");
+    fetch(APP_URL, { mode: "no-cors" })
+      .catch(function () {})
+      .finally(function () {
+        window.open(APP_URL, "_blank");
+        ctaBtn.classList.remove("loading");
+        ctaBtn.textContent = "打開旅行手帳 →";
+        spinner.classList.remove("show");
+      });
+  });
+</script>
+</body>
+</html>

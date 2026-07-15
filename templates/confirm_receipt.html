@@ -1,27 +1,18 @@
-<!DOCTYPE html>
-<html lang="zh-Hant">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>確認收據內容</title>
-<style>
-  body { font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif; background: #f5f3ef; margin: 0; padding: 16px; color: #2b2b2b; }
-  .wrap { max-width: 480px; margin: 0 auto; }
-  h1 { font-size: 1.2rem; }
-  .hint { background: #fff3cd; color: #856404; padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; margin-bottom: 12px; }
-  form { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
-  label { display: block; font-size: 0.85rem; margin-top: 8px; color: #666; }
-  input, select, textarea { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; box-sizing: border-box; font-family: inherit; }
-  textarea { min-height: 60px; }
-  button { margin-top: 12px; width: 100%; padding: 12px; background: #2b2b2b; color: #f5c977; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
-  details { margin-top: 12px; font-size: 0.85rem; color: #666; }
-</style>
-</head>
-<body>
-<div class="wrap">
-  <h1>確認收據內容</h1>
-  <div class="hint">AI 辨識結果僅供參考，請對照收據修改後再送出。</div>
-  <form method="post" action="{{ url_for('add_receipt', trip_id=trip_id) }}">
+{% extends "base.html" %}
+{% block title %}確認收據 — 旅行手帳{% endblock %}
+{% block style %}
+  .ocr-hint { background: var(--gold-soft); color: #7a5c1e; padding: 8px 12px; border-radius: 8px; font-size: 0.8rem; margin-bottom: 12px; }
+  .member-checks { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+  .member-checks label { margin: 0; cursor: pointer; }
+  .member-checks input { display: none; }
+  .member-checks .pill { display: inline-flex; align-items: center; gap: 4px; border: 1.5px solid var(--line); border-radius: 999px; padding: 6px 12px; font-size: 0.9rem; color: var(--ink-soft); background: #fff; }
+  .member-checks input:checked + .pill { border-color: var(--leaf); color: var(--leaf); background: #eef5f0; font-weight: bold; }
+  details { margin-top: 12px; font-size: 0.85rem; color: var(--ink-soft); }
+{% endblock %}
+{% block content %}
+  <h1><span class="deco">🧾</span>確認收據內容</h1>
+  <div class="ocr-hint">辨識結果僅供參考，請對照收據修改後再送出。</div>
+  <form class="card taped" method="post" action="{{ url_for('add_receipt', trip_id=trip_id) }}">
     <input type="hidden" name="image_b64" value="{{ image_b64 }}">
     <input type="hidden" name="image_mime" value="{{ image_mime }}">
     <input type="hidden" name="raw_text" value="{{ extracted.raw_text }}">
@@ -31,10 +22,10 @@
     <input type="text" name="store_name" value="{{ extracted.store_name }}">
 
     <label>金額（日圓，辨識結果請核對）</label>
-    <input type="number" step="1" name="amount" value="{{ extracted.amount or '' }}" required>
+    <input type="number" step="1" inputmode="numeric" name="amount" value="{{ extracted.amount or '' }}" required>
 
     <label>其中稅金（選填）</label>
-    <input type="number" step="1" name="tax" value="{{ extracted.tax or '' }}">
+    <input type="number" step="1" inputmode="numeric" name="tax" value="{{ extracted.tax or '' }}">
 
     <label>分類</label>
     <select name="category">
@@ -49,13 +40,30 @@
     <label>消費日期</label>
     <input type="date" name="txn_date" value="{{ today }}" required>
 
-    <button type="submit">確認並存入帳本</button>
+    <hr class="dashed-sep">
+
+    <label>誰付的錢？</label>
+    <select name="payer_id">
+      {% for m in members %}<option value="{{ m.id }}"{% if m.id == current_member_id %} selected{% endif %}>{{ m.avatar }} {{ m.name }}</option>{% endfor %}
+    </select>
+
+    <label>這筆誰要分攤？（結算時會平均分給勾選的人）</label>
+    <div class="member-checks">
+      {% for m in members %}
+      <label>
+        <input type="checkbox" name="split_ids" value="{{ m.id }}" checked>
+        <span class="pill">{{ m.avatar }} {{ m.name }}</span>
+      </label>
+      {% endfor %}
+    </div>
+    <p class="hint" style="margin-top:6px;">都不勾＝付款人自己出，不列入分帳。</p>
+
+    <button class="btn red" type="submit">確認並存入手帳</button>
   </form>
 
   <details>
-    <summary>看 AI 辨識翻譯全文</summary>
+    <summary>看辨識翻譯全文</summary>
     <p>{{ extracted.translated_text or "（翻譯失敗或無文字）" }}</p>
   </details>
-</div>
-</body>
-</html>
+  <a class="back" href="{{ url_for('add_receipt', trip_id=trip_id) }}">← 重拍一張</a>
+{% endblock %}
