@@ -24,6 +24,13 @@
   .item form { display: inline; }
   .item button { background: none; border: none; color: #aaa; font-size: 0.85rem; cursor: pointer; padding: 0; }
   ol.top10 { padding-left: 20px; margin: 0; }
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #fff; border-top: 1px solid #e5e1da;
+    display: flex; justify-content: space-around; padding: 8px 0 max(8px, env(safe-area-inset-bottom)); z-index: 10; }
+  .bottom-nav a { text-decoration: none; color: #888; font-size: 0.7rem; text-align: center; flex: 1; }
+  .bottom-nav a .ico { display: block; font-size: 1.4rem; }
+  .bottom-nav a.active { color: #2b2b2b; font-weight: bold; }
+  .bottom-nav a.cam { color: #27ae60; font-weight: bold; }
+  body { padding-bottom: 80px; }
 </style>
 </head>
 <body>
@@ -88,6 +95,13 @@
     {% endfor %}
   </ul>
 </div>
+
+<nav class="bottom-nav">
+  <a class="active" href="{{ url_for('dashboard', trip_id=trip.id) }}"><span class="ico">📊</span>儀表板</a>
+  <a class="cam" href="{{ url_for('add_receipt', trip_id=trip.id) }}"><span class="ico">📷</span>拍收據</a>
+  <a href="{{ url_for('itinerary', trip_id=trip.id) }}"><span class="ico">🗺️</span>行程</a>
+  <a href="{{ url_for('pick_member', trip_id=trip.id) }}"><span class="ico">👥</span>成員</a>
+</nav>
 
 <script>
 {% if cat_labels %}
