@@ -58,4 +58,14 @@
     </form>
     {% endif %}
   </div>
+
+  <div class="card" style="border-color: var(--accent-soft);">
+    <label style="margin-top:0; color: var(--accent);">🗑️ 刪除這本手帳</label>
+    <p class="hint">整本旅行帳——所有收據、成員、行程——都會永遠消失，無法復原。要刪除請在下面照抄旅行名稱「{{ trip.name }}」再按刪除。</p>
+    <form method="post" action="{{ url_for('delete_trip', trip_id=trip.id) }}"
+          onsubmit="return confirm('真的要刪掉「{{ trip.name }}」整本手帳嗎？此動作無法復原！');">
+      <input type="text" name="confirm_name" placeholder="照抄旅行名稱" autocomplete="off">
+      <button class="btn red" type="submit">永久刪除這本手帳</button>
+    </form>
+  </div>
 {% endblock %}

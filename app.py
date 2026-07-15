@@ -777,6 +777,31 @@ def export_csv(trip_id):
     )
 
 
+@app.route("/trip/<int:trip_id>/delete_trip", methods=["POST"])
+def delete_trip(trip_id):
+    if not current_member_id(trip_id):
+        return redirect(url_for("pick_member", trip_id=trip_id))
+    # 二次防呆：表單要帶回一模一樣的旅行名稱才會真的刪
+    confirm_name = request.form.get("confirm_name", "").strip()
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            trip = get_trip(cur, trip_id)
+            if not trip or confirm_name != trip["name"]:
+                return redirect(url_for("pick_member", trip_id=trip_id))
+            cur.execute(
+                "DELETE FROM receipt_splits WHERE receipt_id IN (SELECT id FROM receipts WHERE trip_id = %s)",
+                (trip_id,),
+            )
+            cur.execute("DELETE FROM receipts WHERE trip_id = %s", (trip_id,))
+            cur.execute("DELETE FROM itinerary WHERE trip_id = %s", (trip_id,))
+            cur.execute("DELETE FROM members WHERE trip_id = %s", (trip_id,))
+            cur.execute("DELETE FROM trips WHERE id = %s", (trip_id,))
+        conn.commit()
+    session.pop(f"member_{trip_id}", None)
+    session.pop(f"trip_auth_{trip_id}", None)
+    return redirect(url_for("home"))
+
+
 @app.route("/trip/<int:trip_id>/receipt/<int:receipt_id>/image")
 def receipt_image(trip_id, receipt_id):
     with get_conn() as conn:
