@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ trip.name }}</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif; background: #f5f3ef; margin: 0; padding: 16px; color: #2b2b2b; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; margin: 0 0 12px; }
+  .budget-box { background: #2b2b2b; color: #f5c977; border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .budget-box .num { font-size: 1.4rem; font-weight: bold; }
+  .budget-box .bar { background: rgba(255,255,255,0.2); border-radius: 6px; height: 10px; margin-top: 8px; overflow: hidden; }
+  .budget-box .bar .fill { background: #f5c977; height: 100%; }
+  .chart-wrap { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .chart-wrap h2 { font-size: 0.95rem; margin: 0 0 8px; }
+  .add-btn { display: block; text-align: center; background: #27ae60; color: #fff; padding: 12px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-bottom: 16px; }
+  ul.list { list-style: none; padding: 0; margin: 0; }
+  li.item { background: #fff; border-radius: 10px; padding: 12px; margin-bottom: 8px; box-shadow: 0 1px 2px rgba(0,0,0,0.06); }
+  .item .top { display: flex; justify-content: space-between; }
+  .item .amount { font-weight: bold; color: #c0392b; }
+  .item .meta { font-size: 0.8rem; color: #888; margin-top: 4px; }
+  .item form { display: inline; }
+  .item button { background: none; border: none; color: #aaa; font-size: 0.85rem; cursor: pointer; padding: 0; }
+  ol.top10 { padding-left: 20px; margin: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{ trip.name }}</h1>
+
+  <div class="budget-box">
+    <div>已花費</div>
+    <div class="num">¥{{ "%.0f"|format(total_spent) }}{% if budget %} / ¥{{ "%.0f"|format(budget) }}{% endif %}</div>
+    {% if pct is not none %}
+    <div class="bar"><div class="fill" style="width: {{ [pct, 100]|min }}%;"></div></div>
+    <div style="font-size:0.8rem; margin-top:4px;">已用 {{ pct }}%</div>
+    {% endif %}
+  </div>
+
+  <a class="add-btn" href="{{ url_for('add_receipt', trip_id=trip.id) }}">＋ 拍收據記一筆</a>
+
+  {% if cat_labels %}
+  <div class="chart-wrap">
+    <h2>消費類別占比</h2>
+    <canvas id="catChart" height="200"></canvas>
+  </div>
+  {% endif %}
+
+  {% if daily_labels %}
+  <div class="chart-wrap">
+    <h2>每日花費趨勢</h2>
+    <canvas id="dailyChart" height="200"></canvas>
+  </div>
+  {% endif %}
+
+  {% if pay_labels %}
+  <div class="chart-wrap">
+    <h2>付款方式分布</h2>
+    <canvas id="payChart" height="200"></canvas>
+  </div>
+  {% endif %}
+
+  {% if top10 %}
+  <div class="chart-wrap">
+    <h2>消費前十名</h2>
+    <ol class="top10">
+      {% for t in top10 %}
+      <li>{{ t.store_name or "未命名" }} — ¥{{ "%.0f"|format(t.amount) }}（{{ t.txn_date }}）</li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+
+  <ul class="list">
+    {% for r in receipts %}
+    <li class="item">
+      <div class="top">
+        <div>{{ r.avatar }} {{ r.store_name or "未命名" }}</div>
+        <div class="amount">¥{{ "%.0f"|format(r.amount) }}</div>
+      </div>
+      <div class="meta">{{ r.txn_date }} · {{ r.category }} · {{ r.payment_method }}{% if r.region %} · {{ r.region }}{% endif %} · {{ r.member_name }}</div>
+      <form method="post" action="{{ url_for('delete_receipt', trip_id=trip.id, receipt_id=r.id) }}" onsubmit="return confirm('刪除這筆？');">
+        <button type="submit">刪除</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+
+<script>
+{% if cat_labels %}
+new Chart(document.getElementById('catChart'), {
+  type: 'pie',
+  data: { labels: {{ cat_labels|tojson }}, datasets: [{ data: {{ cat_values|tojson }}, backgroundColor: ['#c0392b','#e67e22','#f1c40f','#8e44ad','#2980b9','#16a085'] }] },
+  options: { plugins: { legend: { position: 'bottom' } } }
+});
+{% endif %}
+{% if daily_labels %}
+new Chart(document.getElementById('dailyChart'), {
+  type: 'line',
+  data: { labels: {{ daily_labels|tojson }}, datasets: [{ label: '花費', data: {{ daily_values|tojson }}, borderColor: '#2b2b2b', backgroundColor: 'rgba(43,43,43,0.1)', fill: true }] },
+  options: { plugins: { legend: { display: false } } }
+});
+{% endif %}
+{% if pay_labels %}
+new Chart(document.getElementById('payChart'), {
+  type: 'doughnut',
+  data: { labels: {{ pay_labels|tojson }}, datasets: [{ data: {{ pay_values|tojson }}, backgroundColor: ['#2980b9','#16a085','#f1c40f','#7f8c8d'] }] },
+  options: { plugins: { legend: { position: 'bottom' } } }
+});
+{% endif %}
+</script>
+</body>
+</html>

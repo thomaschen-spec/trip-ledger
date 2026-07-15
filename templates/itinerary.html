@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>設定行程 — {{ trip.name }}</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif; background: #f5f3ef; margin: 0; padding: 16px; color: #2b2b2b; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; }
+  .hint { color: #888; font-size: 0.85rem; margin-bottom: 16px; }
+  .card { background: #fff; border-radius: 12px; padding: 16px; margin-bottom: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  form { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  label { display: block; font-size: 0.85rem; margin-top: 8px; color: #666; }
+  input { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
+  button { margin-top: 12px; width: 100%; padding: 10px; background: #2b2b2b; color: #f5c977; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+  .next { display: block; text-align: center; margin-top: 16px; background: #27ae60; color: #fff; padding: 12px; border-radius: 8px; text-decoration: none; font-weight: bold; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>{{ trip.name }} — 設定行程</h1>
+  <p class="hint">告訴系統幾號到幾號在哪個地區，收據就能自動判斷消費地點。可以先跳過，之後再回來加。</p>
+
+  {% for s in segments %}
+  <div class="card">{{ s.start_date }} ～ {{ s.end_date }}：{{ s.region }}</div>
+  {% endfor %}
+
+  <form method="post">
+    <label>開始日期</label>
+    <input type="date" name="start_date" required>
+    <label>結束日期</label>
+    <input type="date" name="end_date" required>
+    <label>地區名稱</label>
+    <input type="text" name="region" placeholder="例如：東京" required>
+    <button type="submit">新增一段行程</button>
+  </form>
+
+  <a class="next" href="{{ url_for('pick_member', trip_id=trip.id) }}">完成，開始記帳 →</a>
+</div>
+</body>
+</html>

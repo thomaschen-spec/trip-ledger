@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>拍收據</title>
+<style>
+  body { font-family: -apple-system, "Segoe UI", "Microsoft JhengHei", sans-serif; background: #f5f3ef; margin: 0; padding: 16px; color: #2b2b2b; }
+  .wrap { max-width: 480px; margin: 0 auto; }
+  h1 { font-size: 1.3rem; }
+  form { background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  label { display: block; font-size: 0.9rem; margin-top: 8px; color: #666; }
+  input { width: 100%; padding: 10px; margin-top: 4px; border: 1px solid #ddd; border-radius: 6px; font-size: 1rem; box-sizing: border-box; }
+  button { margin-top: 12px; width: 100%; padding: 12px; background: #2b2b2b; color: #f5c977; border: none; border-radius: 6px; font-size: 1rem; cursor: pointer; }
+  a.back { display: inline-block; margin-top: 12px; color: #666; text-decoration: none; font-size: 0.9rem; }
+  .hint { color: #888; font-size: 0.8rem; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>拍收據</h1>
+  <p class="hint">拍照或選圖後，系統會自動辨識文字並翻譯，辨識不一定準，下一步可以修改。</p>
+  <form method="post" enctype="multipart/form-data">
+    <label>收據照片</label>
+    <input type="file" name="photo" accept="image/*" capture="environment" required>
+    <button type="submit">辨識收據 →</button>
+  </form>
+  <a class="back" href="{{ url_for('dashboard', trip_id=trip_id) }}">← 回帳本</a>
+</div>
+</body>
+</html>
