@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}登入 — 旅行手帳{% endblock %}
+{% block content %}
+  <h1><span class="deco">🔑</span>登入</h1>
+  <p class="page-sub">登入後才能看到你的旅行帳本喔。</p>
+
+  {% if error %}
+  <div class="card taped" style="background: var(--accent-soft); color: var(--accent); text-align:center;">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <form class="card taped" method="post">
+    <input type="hidden" name="next" value="{{ next }}">
+    <label>Email</label>
+    <input type="email" name="email" autofocus required>
+    <label>密碼</label>
+    <input type="password" name="password" required>
+    <button class="btn red" type="submit">登入</button>
+  </form>
+  <p class="hint" style="text-align:center;">還沒有帳號？<a href="{{ url_for('register') }}">先註冊一個</a></p>
+{% endblock %}

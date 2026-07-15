@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block title %}註冊 — 旅行手帳{% endblock %}
+{% block content %}
+  <h1><span class="deco">📝</span>註冊帳號</h1>
+  <p class="page-sub">建一個帳號，你的旅行手帳只有你和邀請過的旅伴看得到。</p>
+
+  {% if error %}
+  <div class="card taped" style="background: var(--accent-soft); color: var(--accent); text-align:center;">
+    {{ error }}
+  </div>
+  {% endif %}
+
+  <form class="card taped" method="post">
+    <label>Email</label>
+    <input type="email" name="email" autofocus required>
+    <label>顯示名稱（選填）</label>
+    <input type="text" name="display_name" placeholder="例如：小明">
+    <label>密碼</label>
+    <input type="password" name="password" required minlength="4">
+    <label>再輸入一次密碼</label>
+    <input type="password" name="password2" required minlength="4">
+    <button class="btn red" type="submit">建立帳號</button>
+  </form>
+  <p class="hint" style="text-align:center;">已經有帳號了？<a href="{{ url_for('login') }}">直接登入</a></p>
+{% endblock %}

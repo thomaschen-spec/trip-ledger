@@ -34,6 +34,8 @@
     <span><a href="{{ url_for('itinerary', trip_id=trip.id) }}">🗺️ 行程</a> ・ <a href="{{ url_for('export_csv', trip_id=trip.id) }}">⬇️ 匯出</a></span>
   </div>
 
+  <div id="offline-pending" data-trip-id="{{ trip.id }}" style="display:none;"></div>
+
   <div class="budget-box">
     <div style="font-size:0.85rem;">已花費</div>
     <div class="num">¥{{ "{:,.0f}".format(total_spent) }}{% if budget %} <span style="font-size:0.95rem; opacity:0.7;">/ ¥{{ "{:,.0f}".format(budget) }}</span>{% endif %}</div>

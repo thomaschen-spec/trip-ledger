@@ -1,8 +1,12 @@
 {% extends "base.html" %}
-{% block title %}輸入暗號 — {{ trip.name }}{% endblock %}
+{% block title %}{% if claim_mode %}認領手帳{% else %}輸入暗號{% endif %} — {{ trip.name }}{% endblock %}
 {% block content %}
-  <h1><span class="deco">🔒</span>{{ trip.name }}</h1>
+  <h1><span class="deco">{% if claim_mode %}📖{% else %}🔒{% endif %}</span>{{ trip.name }}</h1>
+  {% if claim_mode %}
+  <p class="page-sub">這本手帳是帳號系統上線前建的，還沒有主人。如果它是你的，按下面認領回來；認領之後別人就進不來了。</p>
+  {% else %}
   <p class="page-sub">這本手帳有設暗號，跟旅伴要邀請碼才能進來喔。</p>
+  {% endif %}
 
   {% if error %}
   <div class="card taped" style="background: var(--accent-soft); color: var(--accent); text-align:center;">
@@ -10,9 +14,17 @@
   </div>
   {% endif %}
 
+  {% if claim_mode %}
+  <form class="card taped" method="post" style="text-align:center;">
+    <input type="hidden" name="claim" value="1">
+    <button class="btn red" type="submit">📖 這是我的手帳，認領回來</button>
+  </form>
+  <a class="back" href="{{ url_for('home') }}">← 不是我的，回首頁</a>
+  {% else %}
   <form class="card taped" method="post">
     <label>邀請碼</label>
     <input type="text" name="invite_code" autofocus required>
     <button class="btn red" type="submit">進入手帳</button>
   </form>
+  {% endif %}
 {% endblock %}

@@ -11,7 +11,7 @@
   <h1><span class="deco">{% if mode == 'edit' %}✏️{% else %}✍️{% endif %}</span>{% if mode == 'edit' %}修改這筆記帳{% else %}手動記一筆{% endif %}</h1>
   {% if mode == 'manual' %}<p class="page-sub">沒收據也能記：吃路邊攤、投販賣機、給小費都算數。</p>{% endif %}
 
-  <form class="card taped" method="post">
+  <form class="card taped" method="post"{% if mode == 'manual' %} id="offline-manual-form" data-trip-id="{{ trip_id }}"{% endif %}>
     <label>花在哪（店名或項目）</label>
     <input type="text" name="store_name" value="{{ receipt.store_name if receipt else '' }}" placeholder="例如：便利商店買飲料">
 

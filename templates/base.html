@@ -107,6 +107,13 @@
 </head>
 <body{% if trip_id_nav is defined and trip_id_nav %} style="padding-bottom: 86px;"{% endif %}>
 <div class="wrap">
+{% if session.user_id %}
+<div style="text-align:right; margin-bottom:2px;">
+  <form method="post" action="{{ url_for('logout') }}" style="display:inline;">
+    <button type="submit" style="background:none;border:none;color:var(--ink-soft);font-size:0.78rem;cursor:pointer;text-decoration:underline;padding:0;">登出</button>
+  </form>
+</div>
+{% endif %}
 {% block content %}{% endblock %}
 </div>
 
@@ -120,21 +127,16 @@
 </nav>
 {% endif %}
 <script>
-  // Register the service worker so the app becomes installable ("加到主畫面").
-  // NOTE: sw.js is served from /static/sw.js by Flask's default static route,
-  // so without a Service-Worker-Allowed header its effective scope defaults
-  // to /static/ instead of covering the whole app ("/"). We deliberately do
-  // NOT pass a {scope: '/'} option here because Flask's static handler does
-  // not send the Service-Worker-Allowed header needed to widen the scope —
-  // requesting scope '/' from a script under /static/ would just throw a
-  // SecurityError. See final report: this may need a dedicated /sw.js route
-  // in app.py for full "/" scope coverage.
+  // Register the service worker so the app becomes installable ("加到主畫面")
+  // and works offline. Served from a dedicated /sw.js route (not /static/sw.js)
+  // so its scope covers the whole app ("/"), not just /static/.
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/static/sw.js').catch(() => {});
+      navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(() => {});
     });
   }
 </script>
+<script src="/static/offline.js"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>

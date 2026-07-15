@@ -7,15 +7,17 @@ import time
 import urllib.request
 from datetime import date, datetime, timedelta, timezone
 
-from flask import Flask, render_template, request, redirect, url_for, session, Response
+from flask import Flask, render_template, request, redirect, url_for, session, Response, jsonify
 import psycopg
 from psycopg.rows import dict_row
 from PIL import Image, ImageOps
+from werkzeug.security import generate_password_hash, check_password_hash
 
 from ocr import extract_receipt
 
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "dev-only-insecure-key-change-in-render-env")
+app.permanent_session_lifetime = timedelta(days=90)
 
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
@@ -90,6 +92,34 @@ def init_db():
             """)
             # v3：邀請碼隱私門（NULL＝不設門，舊旅行不受影響）
             cur.execute("ALTER TABLE trips ADD COLUMN IF NOT EXISTS invite_code TEXT")
+            # v4：帳號系統與使用者隔離
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id SERIAL PRIMARY KEY,
+                    email TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
+                    display_name TEXT,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                )
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS user_trips (
+                    id SERIAL PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+                    UNIQUE (user_id, trip_id)
+                )
+            """)
+            # v5：離線記帳去重（前端 client_uuid，重送也只記一筆）
+            # 一般 UNIQUE INDEX 在 Postgres 裡多個 NULL 本來就不算互相衝突，
+            # 不需要 WHERE 條件；用 partial index 反而會讓 ON CONFLICT (client_uuid)
+            # 找不到對應的 arbiter index。
+            cur.execute(
+                "ALTER TABLE receipts ADD COLUMN IF NOT EXISTS client_uuid TEXT"
+            )
+            cur.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS receipts_client_uuid_uidx ON receipts (client_uuid)"
+            )
         conn.commit()
 
 
@@ -126,13 +156,33 @@ def current_member_id(trip_id):
     return session.get(f"member_{trip_id}")
 
 
+def claim_old_trips(user_id):
+    """登入成功時，把這個瀏覽器 session 裡還活著的舊旅行(邀請碼通過/選過成員)自動認領給這個帳號。"""
+    trip_ids = set()
+    for key in list(session.keys()):
+        if key.startswith("trip_auth_") or key.startswith("member_"):
+            suffix = key.rsplit("_", 1)[-1]
+            if suffix.isdigit():
+                trip_ids.add(int(suffix))
+    if not trip_ids:
+        return
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            for tid in trip_ids:
+                cur.execute(
+                    "INSERT INTO user_trips (user_id, trip_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                    (user_id, tid),
+                )
+        conn.commit()
+
+
 def get_trip(cur, trip_id):
     cur.execute("SELECT id, name, budget, invite_code FROM trips WHERE id = %s", (trip_id,))
     return cur.fetchone()
 
 
 def compress_image(image_bytes, original_mime=None):
-    """收據照片存檔前壓縮：最長邊縮到 1600px、轉 JPEG q80。壞圖就原樣返回。"""
+    """收據照片存檔前壓縮：最長邊縮到 1280px、轉 JPEG q75。壞圖就原樣返回。"""
     try:
         img = Image.open(io.BytesIO(image_bytes))
         img = ImageOps.exif_transpose(img)
@@ -140,11 +190,11 @@ def compress_image(image_bytes, original_mime=None):
             img = img.convert("RGB")
         w, h = img.size
         longest = max(w, h)
-        if longest > 1600:
-            scale = 1600 / longest
+        if longest > 1280:
+            scale = 1280 / longest
             img = img.resize((max(1, round(w * scale)), max(1, round(h * scale))), Image.LANCZOS)
         buf = io.BytesIO()
-        img.save(buf, format="JPEG", quality=80)
+        img.save(buf, format="JPEG", quality=75)
         return buf.getvalue(), "image/jpeg"
     except Exception:
         return image_bytes, original_mime
@@ -179,19 +229,151 @@ def save_splits(cur, receipt_id, split_ids):
         )
 
 
+PUBLIC_ENDPOINTS = {"login", "register", "static", "sw_js", "offline_page"}
+
+# 收據照片保留期限：旅行結束後 30 天（沒排行程的旅行以記帳日起算 60 天）。
+# 帳目數字永遠保留，只清照片，免費資料庫額度才撐得住多人使用。
+IMAGE_RETENTION_AFTER_TRIP_DAYS = 30
+IMAGE_RETENTION_NO_ITINERARY_DAYS = 60
+_PURGE_INTERVAL_SECONDS = 6 * 3600
+_last_purge_at = 0.0
+
+
+def purge_expired_images():
+    global _last_purge_at
+    now = time.time()
+    if now - _last_purge_at < _PURGE_INTERVAL_SECONDS:
+        return
+    _last_purge_at = now
+    try:
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE receipts r SET image = NULL, image_mime = NULL
+                    WHERE r.image IS NOT NULL AND (
+                        (SELECT MAX(i.end_date) FROM itinerary i WHERE i.trip_id = r.trip_id)
+                            < CURRENT_DATE - %s::int
+                        OR (NOT EXISTS (SELECT 1 FROM itinerary i WHERE i.trip_id = r.trip_id)
+                            AND r.created_at < now() - make_interval(days => %s))
+                    )
+                    """,
+                    (IMAGE_RETENTION_AFTER_TRIP_DAYS, IMAGE_RETENTION_NO_ITINERARY_DAYS),
+                )
+            conn.commit()
+    except Exception:
+        _last_purge_at = now  # 失敗也不重試轟炸，等下個週期
+
+
+@app.before_request
+def require_login():
+    purge_expired_images()
+    if request.endpoint is None or request.endpoint in PUBLIC_ENDPOINTS:
+        return None
+    if not session.get("user_id"):
+        if "/api/" in request.path:
+            return jsonify({"ok": False, "error": "login_required"}), 401
+        return redirect(url_for("login", next=request.path))
+    return None
+
+
 @app.before_request
 def gate_check():
     trip_id = (request.view_args or {}).get("trip_id")
     if trip_id is None or request.endpoint == "gate":
         return None
+    user_id = session.get("user_id")
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("SELECT invite_code FROM trips WHERE id = %s", (trip_id,))
             row = cur.fetchone()
-    invite_code = row["invite_code"] if row else None
-    if invite_code and not session.get(f"trip_auth_{trip_id}"):
+            is_member = False
+            claimed = True
+            if user_id:
+                cur.execute(
+                    "SELECT 1 FROM user_trips WHERE user_id = %s AND trip_id = %s",
+                    (user_id, trip_id),
+                )
+                is_member = cur.fetchone() is not None
+            if not is_member:
+                cur.execute("SELECT 1 FROM user_trips WHERE trip_id = %s LIMIT 1", (trip_id,))
+                claimed = cur.fetchone() is not None
+    if is_member or not row:
+        return None
+    invite_code = row["invite_code"]
+    if invite_code:
+        if not session.get(f"trip_auth_{trip_id}"):
+            return redirect(url_for("gate", trip_id=trip_id, next=request.path))
+        return None
+    # 沒設邀請碼的旅行：還沒有主人（帳號系統上線前建的舊手帳）→ 帶去認領頁；
+    # 已有主人 → 外人不得其門而入，回自己的首頁。
+    if not claimed:
         return redirect(url_for("gate", trip_id=trip_id, next=request.path))
-    return None
+    return redirect(url_for("home"))
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    error = None
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        display_name = request.form.get("display_name", "").strip()
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+        if not email or not password:
+            error = "email 和密碼都要填喔"
+        elif password != password2:
+            error = "兩次密碼輸入的不一樣喔"
+        elif len(password) < 4:
+            error = "密碼至少要 4 個字元"
+        else:
+            user_id = None
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+                    if cur.fetchone():
+                        error = "這個 email 已經註冊過了，直接登入就好"
+                    else:
+                        cur.execute(
+                            "INSERT INTO users (email, password_hash, display_name) VALUES (%s, %s, %s) RETURNING id",
+                            (email, generate_password_hash(password), display_name or email.split("@")[0]),
+                        )
+                        user_id = cur.fetchone()["id"]
+                conn.commit()
+            if not error and user_id:
+                session.permanent = True
+                session["user_id"] = user_id
+                claim_old_trips(user_id)
+                return redirect(url_for("home"))
+    return render_template("register.html", error=error)
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    error = None
+    next_url = request.values.get("next", "")
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, password_hash FROM users WHERE email = %s", (email,))
+                user = cur.fetchone()
+        if user and check_password_hash(user["password_hash"], password):
+            session.permanent = True
+            session["user_id"] = user["id"]
+            claim_old_trips(user["id"])
+            if not next_url.startswith("/") or next_url.startswith("//"):
+                next_url = url_for("home")
+            return redirect(next_url)
+        error = "email 或密碼不對喔"
+    return render_template("login.html", error=error, next=next_url)
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    session.pop("user_id", None)
+    return redirect(url_for("login"))
 
 
 @app.route("/trip/<int:trip_id>/gate", methods=["GET", "POST"])
@@ -202,18 +384,48 @@ def gate(trip_id):
     if not trip:
         return redirect(url_for("home"))
 
+    # 沒設邀請碼的舊手帳（帳號系統上線前建的）：還沒有主人時開放「認領」。
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM user_trips WHERE trip_id = %s LIMIT 1", (trip_id,))
+            claimed = cur.fetchone() is not None
+    claim_mode = not trip["invite_code"] and not claimed
+
     error = None
+    if request.method == "POST" and claim_mode and request.form.get("claim"):
+        with get_conn() as conn:
+            with conn.cursor() as cur:
+                # 重查一次，避免兩人同時按認領
+                cur.execute("SELECT 1 FROM user_trips WHERE trip_id = %s LIMIT 1", (trip_id,))
+                if cur.fetchone() is None:
+                    cur.execute(
+                        "INSERT INTO user_trips (user_id, trip_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                        (session["user_id"], trip_id),
+                    )
+                    conn.commit()
+                    return redirect(url_for("dashboard", trip_id=trip_id))
+        return redirect(url_for("home"))
+
     if request.method == "POST":
         code = request.form.get("invite_code", "").strip()
         actual = (trip["invite_code"] or "").strip()
         if actual and code == actual:
             session[f"trip_auth_{trip_id}"] = True
+            user_id = session.get("user_id")
+            if user_id:
+                with get_conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute(
+                            "INSERT INTO user_trips (user_id, trip_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                            (user_id, trip_id),
+                        )
+                    conn.commit()
             next_url = request.args.get("next") or ""
             if not next_url.startswith("/") or next_url.startswith("//"):
                 next_url = url_for("dashboard", trip_id=trip_id)
             return redirect(next_url)
         error = "暗號不對喔"
-    return render_template("gate.html", trip=trip, error=error)
+    return render_template("gate.html", trip=trip, error=error, claim_mode=claim_mode)
 
 
 @app.route("/trip/<int:trip_id>/invite_code", methods=["POST"])
@@ -231,15 +443,18 @@ def set_invite_code(trip_id):
 
 @app.route("/")
 def home():
+    user_id = session["user_id"]
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
                 SELECT t.id, t.name, t.budget,
                        COALESCE(SUM(r.amount), 0) AS spent,
                        COUNT(r.id) AS receipt_count
-                FROM trips t LEFT JOIN receipts r ON r.trip_id = t.id
+                FROM trips t
+                JOIN user_trips ut ON ut.trip_id = t.id AND ut.user_id = %s
+                LEFT JOIN receipts r ON r.trip_id = t.id
                 GROUP BY t.id ORDER BY t.id DESC
-            """)
+            """, (user_id,))
             trips = cur.fetchall()
             cur.execute("""
                 SELECT trip_id, MIN(start_date) AS start_date, MAX(end_date) AS end_date
@@ -264,6 +479,7 @@ def new_trip():
     invite_code = request.form.get("invite_code", "").strip() or None
     if not name:
         return redirect(url_for("home"))
+    user_id = session["user_id"]
     with get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(
@@ -271,6 +487,10 @@ def new_trip():
                 (name, budget, invite_code),
             )
             trip_id = cur.fetchone()["id"]
+            cur.execute(
+                "INSERT INTO user_trips (user_id, trip_id) VALUES (%s, %s) ON CONFLICT DO NOTHING",
+                (user_id, trip_id),
+            )
         conn.commit()
     if invite_code:
         # 創建者剛剛自己填的暗號，不用再驗一次
@@ -541,6 +761,72 @@ def add_receipt(trip_id):
         trip_id_nav=trip_id,
         nav_active="add",
     )
+
+
+@app.route("/sw.js")
+def sw_js():
+    sw_path = os.path.join(app.static_folder, "sw.js")
+    with open(sw_path, "r", encoding="utf-8") as f:
+        body = f.read()
+    resp = Response(body, mimetype="application/javascript")
+    resp.headers["Service-Worker-Allowed"] = "/"
+    resp.headers["Cache-Control"] = "no-cache"
+    return resp
+
+
+@app.route("/offline")
+def offline_page():
+    return render_template("offline.html")
+
+
+@app.route("/trip/<int:trip_id>/api/manual", methods=["POST"])
+def api_manual_entry(trip_id):
+    member_id = current_member_id(trip_id)
+    if not member_id:
+        return jsonify({"ok": False, "error": "no_member"}), 400
+
+    data = request.get_json(silent=True) or {}
+    client_uuid = (data.get("client_uuid") or "").strip()
+    if not client_uuid:
+        return jsonify({"ok": False, "error": "missing_client_uuid"}), 400
+
+    try:
+        amount = float(data["amount"])
+        tax_raw = data.get("tax")
+        tax = float(tax_raw) if tax_raw not in (None, "") else None
+        category = data["category"]
+        payment_method = data["payment_method"]
+        txn_date = data["txn_date"]
+        store_name = (data.get("store_name") or "").strip()
+        payer_id = int(data["payer_id"])
+        split_ids = [int(x) for x in (data.get("split_ids") or [])]
+    except (KeyError, TypeError, ValueError):
+        return jsonify({"ok": False, "error": "bad_request"}), 400
+
+    region = find_region(trip_id, txn_date)
+
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                """
+                INSERT INTO receipts
+                    (trip_id, member_id, payer_id, store_name, amount, tax,
+                     category, payment_method, txn_date, region, client_uuid)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (client_uuid) DO NOTHING
+                RETURNING id
+                """,
+                (trip_id, member_id, payer_id, store_name, amount, tax,
+                 category, payment_method, txn_date, region, client_uuid),
+            )
+            row = cur.fetchone()
+            if row is None:
+                conn.commit()
+                return jsonify({"ok": True, "duplicate": True})
+            receipt_id = row["id"]
+            save_splits(cur, receipt_id, split_ids)
+        conn.commit()
+    return jsonify({"ok": True, "receipt_id": receipt_id})
 
 
 @app.route("/trip/<int:trip_id>/manual", methods=["GET", "POST"])
