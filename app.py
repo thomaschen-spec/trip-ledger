@@ -1,10 +1,14 @@
 import base64
 import csv
+import hashlib
 import io
 import json
 import os
+import secrets
+import smtplib
 import time
 import urllib.request
+from email.message import EmailMessage
 from datetime import date, datetime, timedelta, timezone
 
 from flask import Flask, render_template, request, redirect, url_for, session, Response, jsonify
@@ -120,6 +124,9 @@ def init_db():
             cur.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS receipts_client_uuid_uidx ON receipts (client_uuid)"
             )
+            # v6：忘記密碼（存重設 token 的雜湊與期限，不存明文）
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_token_hash TEXT")
+            cur.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_expires_at TIMESTAMPTZ")
         conn.commit()
 
 
@@ -229,7 +236,7 @@ def save_splits(cur, receipt_id, split_ids):
         )
 
 
-PUBLIC_ENDPOINTS = {"login", "register", "static", "sw_js", "offline_page"}
+PUBLIC_ENDPOINTS = {"login", "register", "static", "sw_js", "offline_page", "forgot_password", "reset_password"}
 
 # 收據照片保留期限：旅行結束後 30 天（沒排行程的旅行以記帳日起算 60 天）。
 # 帳目數字永遠保留，只清照片，免費資料庫額度才撐得住多人使用。
@@ -374,6 +381,101 @@ def login():
 def logout():
     session.pop("user_id", None)
     return redirect(url_for("login"))
+
+
+# ---- 忘記密碼：寄重設連結（SMTP 設定放環境變數，沒設定時此功能顯示未啟用） ----
+SMTP_HOST = os.environ.get("SMTP_HOST")          # Brevo: smtp-relay.brevo.com
+SMTP_PORT = int(os.environ.get("SMTP_PORT", "587"))
+SMTP_USER = os.environ.get("SMTP_USER")          # Brevo 後台顯示的 SMTP 登入帳號
+SMTP_PASS = os.environ.get("SMTP_PASS")          # Brevo 的 SMTP Key
+MAIL_FROM = os.environ.get("MAIL_FROM")          # 在 Brevo 驗證過的寄件 email
+RESET_TOKEN_TTL_MINUTES = 60
+
+
+def mail_configured():
+    return all([SMTP_HOST, SMTP_USER, SMTP_PASS, MAIL_FROM])
+
+
+def send_reset_email(to_email, reset_url):
+    msg = EmailMessage()
+    msg["Subject"] = "旅行手帳 — 重設密碼"
+    msg["From"] = MAIL_FROM
+    msg["To"] = to_email
+    msg.set_content(
+        "有人（應該是你）在「旅行手帳」按了忘記密碼。\n\n"
+        f"點這個連結設定新密碼（{RESET_TOKEN_TTL_MINUTES} 分鐘內有效）：\n{reset_url}\n\n"
+        "如果不是你按的，忽略這封信就好，密碼不會被改。"
+    )
+    with smtplib.SMTP(SMTP_HOST, SMTP_PORT, timeout=15) as server:
+        server.starttls()
+        server.login(SMTP_USER, SMTP_PASS)
+        server.send_message(msg)
+
+
+def hash_token(token):
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+@app.route("/forgot", methods=["GET", "POST"])
+def forgot_password():
+    if not mail_configured():
+        return render_template("forgot.html", disabled=True, done=False)
+    done = False
+    if request.method == "POST":
+        email = request.form.get("email", "").strip().lower()
+        if email:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("SELECT id FROM users WHERE email = %s", (email,))
+                    user = cur.fetchone()
+                    if user:
+                        token = secrets.token_urlsafe(32)
+                        cur.execute(
+                            "UPDATE users SET reset_token_hash = %s, "
+                            "reset_expires_at = now() + make_interval(mins => %s) WHERE id = %s",
+                            (hash_token(token), RESET_TOKEN_TTL_MINUTES, user["id"]),
+                        )
+                        conn.commit()
+                        reset_url = url_for("reset_password", token=token, _external=True)
+                        try:
+                            send_reset_email(email, reset_url)
+                        except Exception:
+                            pass  # 寄信失敗也回同樣畫面，不洩漏哪些 email 存在
+        # 無論 email 存不存在都顯示同一句話，避免被拿來探測誰有註冊
+        done = True
+    return render_template("forgot.html", disabled=False, done=done)
+
+
+@app.route("/reset/<token>", methods=["GET", "POST"])
+def reset_password(token):
+    with get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "SELECT id FROM users WHERE reset_token_hash = %s AND reset_expires_at > now()",
+                (hash_token(token),),
+            )
+            user = cur.fetchone()
+    if not user:
+        return render_template("reset.html", invalid=True, error=None)
+    error = None
+    if request.method == "POST":
+        password = request.form.get("password", "")
+        password2 = request.form.get("password2", "")
+        if password != password2:
+            error = "兩次密碼輸入的不一樣喔"
+        elif len(password) < 4:
+            error = "密碼至少要 4 個字元"
+        else:
+            with get_conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute(
+                        "UPDATE users SET password_hash = %s, reset_token_hash = NULL, "
+                        "reset_expires_at = NULL WHERE id = %s",
+                        (generate_password_hash(password), user["id"]),
+                    )
+                conn.commit()
+            return redirect(url_for("login"))
+    return render_template("reset.html", invalid=False, error=error)
 
 
 @app.route("/trip/<int:trip_id>/gate", methods=["GET", "POST"])

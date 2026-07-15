@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}忘記密碼 — 旅行手帳{% endblock %}
+{% block content %}
+  <h1><span class="deco">🔑</span>忘記密碼</h1>
+
+  {% if disabled %}
+  <div class="card taped" style="text-align:center;">
+    寄信功能還沒設定好，暫時無法自動重設密碼。<br>
+    先重新註冊一個帳號、再用邀請碼加回旅行，或聯絡手帳的主人幫忙。
+  </div>
+  <a class="back" href="{{ url_for('login') }}">← 回登入</a>
+  {% elif done %}
+  <div class="card taped" style="text-align:center;">
+    📮 如果這個 email 有註冊過，重設密碼的信已經寄出了。<br>
+    去收信匣（也翻一下垃圾信）點信裡的連結，60 分鐘內有效。
+  </div>
+  <a class="back" href="{{ url_for('login') }}">← 回登入</a>
+  {% else %}
+  <p class="page-sub">輸入註冊時用的 email，我們會寄一封重設密碼的信給你。</p>
+  <form class="card taped" method="post">
+    <label>Email</label>
+    <input type="email" name="email" autofocus required>
+    <button class="btn red" type="submit">寄重設密碼的信給我</button>
+  </form>
+  <a class="back" href="{{ url_for('login') }}">← 回登入</a>
+  {% endif %}
+{% endblock %}

@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}設定新密碼 — 旅行手帳{% endblock %}
+{% block content %}
+  <h1><span class="deco">🔑</span>設定新密碼</h1>
+
+  {% if invalid %}
+  <div class="card taped" style="text-align:center;">
+    這個連結已經失效了（超過 60 分鐘或已經用過）。<br>
+    再按一次「忘記密碼」拿新的連結吧。
+  </div>
+  <a class="back" href="{{ url_for('forgot_password') }}">← 重新申請</a>
+  {% else %}
+  {% if error %}
+  <div class="card taped" style="background: var(--accent-soft); color: var(--accent); text-align:center;">
+    {{ error }}
+  </div>
+  {% endif %}
+  <form class="card taped" method="post">
+    <label>新密碼</label>
+    <input type="password" name="password" autofocus required>
+    <label>再輸入一次新密碼</label>
+    <input type="password" name="password2" required>
+    <button class="btn red" type="submit">設定新密碼</button>
+  </form>
+  {% endif %}
+{% endblock %}
